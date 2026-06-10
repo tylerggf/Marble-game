@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Marble Race</title>
+</head>
+<body>
+
+<h1>Marble Race Game</h1>
+
+<input id="code" placeholder="Enter QR Code">
+<button onclick="useCode()">Start</button>
+
+<h2>Pick your marble</h2>
+
+<button onclick="pick('Red')">Red</button>
+<button onclick="pick('Blue')">Blue</button>
+<button onclick="pick('Green')">Green</button>
+<button onclick="pick('Yellow')">Yellow</button>
+<button onclick="pick('Purple')">Purple</button>
+<button onclick="pick('Orange')">Orange</button>
+<button onclick="pick('Black')">Black</button>
+
+<h2 id="result"></h2>
+
+<script>
+let selected = null;
+
+async function useCode() {
+    let code = document.getElementById("code").value;
+
+    let res = await fetch("/use-code", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ code })
+    });
+
+    let data = await res.json();
+    alert(data.message || "Code accepted");
+}
+
+async function pick(color) {
+    selected = color;
+
+    let res = await fetch("/race", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ marble: color })
+    });
+
+    let data = await res.json();
+
+    document.getElementById("result").innerText =
+        "Winner: " + data.winner + (data.playerWon ? " (YOU WIN!)" : "");
+}
+</script>
+
+</body>
+</html>
