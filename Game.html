@@ -2,168 +2,245 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Marble Race Probability Game</title>
+<title>Marble Race PRO</title>
 <style>
-  body {
-    margin: 0;
-    font-family: Arial;
-    background: #0f0f0f;
-    color: white;
-    text-align: center;
-  }
+body {
+  margin: 0;
+  background: #0b0f14;
+  overflow: hidden;
+  font-family: Arial;
+  color: white;
+  text-align: center;
+}
 
-  canvas {
-    background: #1c1c1c;
-    display: block;
-    margin: auto;
-    border: 2px solid #333;
-  }
-
-  #ui {
-    padding: 10px;
-  }
-
-  button {
-    margin: 5px;
-    padding: 10px;
-    cursor: pointer;
-  }
+canvas {
+  display: block;
+  margin: auto;
+  background: #111821;
+}
+#ui {
+  position: absolute;
+  top: 10px;
+  width: 100%;
+}
+button {
+  margin: 4px;
+  padding: 8px;
+  border: none;
+  cursor: pointer;
+}
 </style>
 </head>
 <body>
 
 <div id="ui">
   <h2>Pick Your Marble</h2>
-  <div id="marbles"></div>
-  <button onclick="startRace()">Start Race</button>
+  <div id="buttons"></div>
+  <button onclick="startRace()">START RACE</button>
   <h3 id="status"></h3>
 </div>
 
-<canvas id="game" width="900" height="500"></canvas>
+<canvas id="c" width="1000" height="600"></canvas>
 
 <script>
-const canvas = document.getElementById("game");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-const MARBLE_COUNT = 7;
-const COLORS = ["red","blue","green","yellow","purple","orange","white"];
+const W = canvas.width;
+const H = canvas.height;
+
+const COLORS = ["#ff3b3b","#3b7bff","#3bff7a","#ffe93b","#b23bff","#ff8c3b","#ffffff"];
+const LANES = 7;
 
 let selected = null;
 let marbles = [];
 let obstacles = [];
+let particles = [];
 let running = false;
+let speedTime = 1;
+
+class Particle {
+  constructor(x,y,color){
+    this.x=x;this.y=y;
+    this.vx=(Math.random()-0.5)*3;
+    this.vy=(Math.random()-0.5)*3;
+    this.life=60;
+    this.color=color;
+  }
+  update(){
+    this.x+=this.vx;
+    this.y+=this.vy;
+    this.life--;
+  }
+  draw(){
+    ctx.globalAlpha=this.life/60;
+    ctx.fillStyle=this.color;
+    ctx.fillRect(this.x,this.y,3,3);
+    ctx.globalAlpha=1;
+  }
+}
 
 class Marble {
-  constructor(i) {
-    this.id = i;
-    this.x = 50;
-    this.y = 60 + i * 60;
-    this.speed = 2 + Math.random() * 1.5;
-    this.baseSpeed = this.speed;
-    this.finished = false;
-    this.finishTime = 0;
+  constructor(i){
+    this.i=i;
+    this.x=60;
+    this.y=100+i*70;
+    this.vx=0;
+    this.base=2.2+Math.random()*1.2;
+    this.finished=false;
+    this.finishT=0;
+    this.bounce=0;
   }
 
-  update() {
-    if (this.finished || !running) return;
+  update(){
+    if(!running||this.finished) return;
 
-    let slow = obstacles[this.id] * 0.35;
-    this.speed = this.baseSpeed - slow;
+    let slow = obstacles[this.i]*0.25;
+    let target = this.base - slow;
 
-    this.x += this.speed;
+    this.vx += (target - this.vx)*0.08;
+    this.x += this.vx*speedTime;
 
-    if (this.x >= canvas.width - 30) {
-      this.finished = true;
-      this.finishTime = performance.now();
+    this.bounce *= 0.9;
+
+    if(this.x > W-80){
+      this.finished=true;
+      this.finishT=performance.now();
+      for(let i=0;i<15;i++){
+        particles.push(new Particle(this.x,this.y,COLORS[this.i]));
+      }
+    }
+
+    if(Math.random()<0.01 && obstacles[this.i]>0){
+      this.bounce = 6;
+      particles.push(new Particle(this.x,this.y,COLORS[this.i]));
     }
   }
 
-  draw() {
+  draw(){
+    let r = 16 + this.bounce;
+
+    // shadow
     ctx.beginPath();
-    ctx.fillStyle = COLORS[this.id];
-    ctx.arc(this.x, this.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle="rgba(0,0,0,0.4)";
+    ctx.arc(this.x+3,this.y+3,r,0,Math.PI*2);
+    ctx.fill();
+
+    // body
+    let g = ctx.createRadialGradient(this.x-5,this.y-5,2,this.x,this.y,r);
+    g.addColorStop(0,"#fff");
+    g.addColorStop(0.2,COLORS[this.i]);
+    g.addColorStop(1,"#000");
+
+    ctx.beginPath();
+    ctx.fillStyle=g;
+    ctx.arc(this.x,this.y,r,0,Math.PI*2);
     ctx.fill();
   }
 }
 
-function createObstacles() {
-  obstacles = [];
-  for (let i = 0; i < MARBLE_COUNT; i++) {
-    obstacles.push(Math.floor(Math.random() * 4)); // 0–3
+function makeObstacles(){
+  obstacles=[];
+  for(let i=0;i<LANES;i++){
+    obstacles.push(Math.floor(Math.random()*4));
   }
 }
 
-function drawLanes() {
-  ctx.strokeStyle = "#333";
-  for (let i = 0; i < MARBLE_COUNT; i++) {
+function drawTrack(){
+  // textured background
+  for(let y=0;y<H;y+=20){
+    for(let x=0;x<W;x+=20){
+      ctx.fillStyle = (x+y)%40===0 ? "#121a25" : "#0f141c";
+      ctx.fillRect(x,y,20,20);
+    }
+  }
+
+  for(let i=0;i<LANES;i++){
+    let y=100+i*70;
+
+    // lane glow
+    ctx.shadowColor=COLORS[i];
+    ctx.shadowBlur=10;
+
+    ctx.strokeStyle="rgba(255,255,255,0.05)";
     ctx.beginPath();
-    ctx.moveTo(0, 60 + i * 60);
-    ctx.lineTo(canvas.width, 60 + i * 60);
+    ctx.moveTo(0,y);
+    ctx.lineTo(W,y);
     ctx.stroke();
 
-    // obstacles visual
-    for (let j = 0; j < obstacles[i]; j++) {
-      ctx.fillStyle = "gray";
-      ctx.fillRect(200 + j * 80, 60 + i * 60 - 10, 20, 20);
+    ctx.shadowBlur=0;
+
+    for(let j=0;j<obstacles[i];j++){
+      ctx.fillStyle="#555";
+      ctx.fillRect(300+j*120,y-10,25,25);
+
+      ctx.strokeStyle="#999";
+      ctx.strokeRect(300+j*120,y-10,25,25);
     }
   }
 }
 
-function setup() {
-  marbles = [];
-  for (let i = 0; i < MARBLE_COUNT; i++) {
+function setup(){
+  marbles=[];
+  for(let i=0;i<LANES;i++){
     marbles.push(new Marble(i));
   }
 }
 
-function animate() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+function animate(){
+  ctx.clearRect(0,0,W,H);
 
-  drawLanes();
+  drawTrack();
 
-  marbles.forEach(m => {
+  marbles.forEach(m=>{
     m.update();
     m.draw();
   });
 
-  if (running && marbles.every(m => m.finished)) {
-    running = false;
-    let winner = [...marbles].sort((a,b)=>a.finishTime-b.finishTime)[0];
+  particles.forEach((p,i)=>{
+    p.update();
+    p.draw();
+    if(p.life<=0) particles.splice(i,1);
+  });
+
+  if(running && marbles.every(m=>m.finished)){
+    running=false;
+
+    let winner=[...marbles].sort((a,b)=>a.finishT-b.finishT)[0];
 
     document.getElementById("status").innerText =
-      "Winner: " + COLORS[winner.id].toUpperCase() +
-      " | You chose: " + (selected !== null ? COLORS[selected].toUpperCase() : "none");
+      "WINNER: "+COLORS[winner.i]+" | You picked: "+
+      (selected!==null?COLORS[selected]:"none");
   }
 
   requestAnimationFrame(animate);
 }
 
-function startRace() {
-  if (selected === null) {
-    alert("Pick a marble first");
+function startRace(){
+  if(selected===null){
+    alert("Pick a marble");
     return;
   }
 
-  createObstacles();
+  makeObstacles();
   setup();
-  running = true;
-  document.getElementById("status").innerText = "Racing...";
+  running=true;
+  speedTime=1;
+  document.getElementById("status").innerText="Racing...";
 }
 
-function pick(i) {
-  selected = i;
-  document.getElementById("status").innerText =
-    "Selected: " + COLORS[i].toUpperCase();
+function pick(i){
+  selected=i;
+  document.getElementById("status").innerText="Selected "+COLORS[i];
 }
 
-// UI buttons
-const container = document.getElementById("marbles");
+const btn=document.getElementById("buttons");
 COLORS.forEach((c,i)=>{
-  let b = document.createElement("button");
-  b.innerText = c;
-  b.style.background = c;
-  b.onclick = ()=>pick(i);
-  container.appendChild(b);
+  let b=document.createElement("button");
+  b.style.background=c;
+  b.innerText=" ";
+  b.onclick=()=>pick(i);
+  btn.appendChild(b);
 });
 
 setup();
