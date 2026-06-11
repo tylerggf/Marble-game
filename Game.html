@@ -1,57 +1,173 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Marble Race</title>
+<meta charset="UTF-8">
+<title>Marble Race Probability Game</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial;
+    background: #0f0f0f;
+    color: white;
+    text-align: center;
+  }
+
+  canvas {
+    background: #1c1c1c;
+    display: block;
+    margin: auto;
+    border: 2px solid #333;
+  }
+
+  #ui {
+    padding: 10px;
+  }
+
+  button {
+    margin: 5px;
+    padding: 10px;
+    cursor: pointer;
+  }
+</style>
 </head>
 <body>
 
-<h1>Marble Race Game</h1>
+<div id="ui">
+  <h2>Pick Your Marble</h2>
+  <div id="marbles"></div>
+  <button onclick="startRace()">Start Race</button>
+  <h3 id="status"></h3>
+</div>
 
-<input id="code" placeholder="Enter QR Code">
-<button onclick="useCode()">Start</button>
-
-<h2>Pick your marble</h2>
-
-<button onclick="pick('Red')">Red</button>
-<button onclick="pick('Blue')">Blue</button>
-<button onclick="pick('Green')">Green</button>
-<button onclick="pick('Yellow')">Yellow</button>
-<button onclick="pick('Purple')">Purple</button>
-<button onclick="pick('Orange')">Orange</button>
-<button onclick="pick('Black')">Black</button>
-
-<h2 id="result"></h2>
+<canvas id="game" width="900" height="500"></canvas>
 
 <script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const MARBLE_COUNT = 7;
+const COLORS = ["red","blue","green","yellow","purple","orange","white"];
+
 let selected = null;
+let marbles = [];
+let obstacles = [];
+let running = false;
 
-async function useCode() {
-    let code = document.getElementById("code").value;
+class Marble {
+  constructor(i) {
+    this.id = i;
+    this.x = 50;
+    this.y = 60 + i * 60;
+    this.speed = 2 + Math.random() * 1.5;
+    this.baseSpeed = this.speed;
+    this.finished = false;
+    this.finishTime = 0;
+  }
 
-    let res = await fetch("/use-code", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ code })
-    });
+  update() {
+    if (this.finished || !running) return;
 
-    let data = await res.json();
-    alert(data.message || "Code accepted");
+    let slow = obstacles[this.id] * 0.35;
+    this.speed = this.baseSpeed - slow;
+
+    this.x += this.speed;
+
+    if (this.x >= canvas.width - 30) {
+      this.finished = true;
+      this.finishTime = performance.now();
+    }
+  }
+
+  draw() {
+    ctx.beginPath();
+    ctx.fillStyle = COLORS[this.id];
+    ctx.arc(this.x, this.y, 12, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
-async function pick(color) {
-    selected = color;
-
-    let res = await fetch("/race", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ marble: color })
-    });
-
-    let data = await res.json();
-
-    document.getElementById("result").innerText =
-        "Winner: " + data.winner + (data.playerWon ? " (YOU WIN!)" : "");
+function createObstacles() {
+  obstacles = [];
+  for (let i = 0; i < MARBLE_COUNT; i++) {
+    obstacles.push(Math.floor(Math.random() * 4)); // 0–3
+  }
 }
+
+function drawLanes() {
+  ctx.strokeStyle = "#333";
+  for (let i = 0; i < MARBLE_COUNT; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, 60 + i * 60);
+    ctx.lineTo(canvas.width, 60 + i * 60);
+    ctx.stroke();
+
+    // obstacles visual
+    for (let j = 0; j < obstacles[i]; j++) {
+      ctx.fillStyle = "gray";
+      ctx.fillRect(200 + j * 80, 60 + i * 60 - 10, 20, 20);
+    }
+  }
+}
+
+function setup() {
+  marbles = [];
+  for (let i = 0; i < MARBLE_COUNT; i++) {
+    marbles.push(new Marble(i));
+  }
+}
+
+function animate() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  drawLanes();
+
+  marbles.forEach(m => {
+    m.update();
+    m.draw();
+  });
+
+  if (running && marbles.every(m => m.finished)) {
+    running = false;
+    let winner = [...marbles].sort((a,b)=>a.finishTime-b.finishTime)[0];
+
+    document.getElementById("status").innerText =
+      "Winner: " + COLORS[winner.id].toUpperCase() +
+      " | You chose: " + (selected !== null ? COLORS[selected].toUpperCase() : "none");
+  }
+
+  requestAnimationFrame(animate);
+}
+
+function startRace() {
+  if (selected === null) {
+    alert("Pick a marble first");
+    return;
+  }
+
+  createObstacles();
+  setup();
+  running = true;
+  document.getElementById("status").innerText = "Racing...";
+}
+
+function pick(i) {
+  selected = i;
+  document.getElementById("status").innerText =
+    "Selected: " + COLORS[i].toUpperCase();
+}
+
+// UI buttons
+const container = document.getElementById("marbles");
+COLORS.forEach((c,i)=>{
+  let b = document.createElement("button");
+  b.innerText = c;
+  b.style.background = c;
+  b.onclick = ()=>pick(i);
+  container.appendChild(b);
+});
+
+setup();
+animate();
 </script>
 
 </body>
