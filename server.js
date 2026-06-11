@@ -1,11 +1,16 @@
 const express = require("express");
+const path = require("path");
+
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+// THIS is the key line
+app.use(express.static(path.join(__dirname, "public")));
 
-// THIS serves your website
-app.use(express.static("public"));
+// optional but good
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
-app.listen(PORT, () => {
-    console.log("Server running");
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Server running");
 });
