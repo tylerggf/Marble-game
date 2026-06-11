@@ -3,12 +3,12 @@ const path = require("path");
 
 const app = express();
 
-// THIS is the key line
-app.use(express.static(path.join(__dirname, "public")));
+// serve static files (optional but good)
+app.use(express.static(__dirname));
 
-// optional but good
+// THIS fixes your error
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(__dirname, "Game.html"));
 });
 
 app.listen(process.env.PORT || 3000, () => {
