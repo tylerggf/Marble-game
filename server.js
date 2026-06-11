@@ -3,14 +3,14 @@ const path = require("path");
 
 const app = express();
 
-// serve static files (optional but good)
+// if you have css/js files too
 app.use(express.static(__dirname));
 
-// THIS fixes your error
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "Game.html"));
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("Server running");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
 });
