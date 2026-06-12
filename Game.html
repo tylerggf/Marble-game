@@ -394,3 +394,287 @@ window._ENGINE = {
 };
 
 </script>
+<!-- =========================
+PART 2: UI + GAME FLOW SYSTEM
+HOOKS INTO ENGINE (PART 1)
+========================= -->
+
+<script>
+
+// ======================================================
+// UI STATE SYSTEM
+// ======================================================
+
+const UIState = {
+  MENU: "menu",
+  COUNTDOWN: "countdown",
+  RACING: "racing",
+  RESULTS: "results"
+};
+
+let currentUI = UIState.MENU;
+
+// ======================================================
+// UI ELEMENTS (dynamic overlay system)
+// ======================================================
+
+const UI = {
+  statusText: null,
+  buttonsContainer: null,
+  countdown: 0,
+  countdownActive: false,
+  winnerFlash: 0
+};
+
+// ======================================================
+// INITIALIZE UI
+// ======================================================
+
+function initUI() {
+  UI.statusText = document.getElementById("status");
+  UI.buttonsContainer = document.getElementById("buttons");
+
+  createMarbleButtons();
+  setUIState(UIState.MENU);
+}
+
+// ======================================================
+// CREATE MARBLE SELECTION BUTTONS
+// ======================================================
+
+function createMarbleButtons() {
+  UI.buttonsContainer.innerHTML = "";
+
+  for (let i = 0; i < MARBLE_COLORS.length; i++) {
+    const btn = document.createElement("button");
+
+    btn.style.background = MARBLE_COLORS[i];
+    btn.style.width = "35px";
+    btn.style.height = "35px";
+    btn.style.borderRadius = "6px";
+
+    btn.onclick = () => selectMarble(i);
+
+    btn.addEventListener("mouseenter", () => {
+      btn.style.transform = "scale(1.2)";
+    });
+
+    btn.addEventListener("mouseleave", () => {
+      btn.style.transform = "scale(1)";
+    });
+
+    UI.buttonsContainer.appendChild(btn);
+  }
+}
+
+// ======================================================
+// MARBLE SELECTION SYSTEM
+// ======================================================
+
+function selectMarble(id) {
+  pickMarble(id);
+
+  UI.statusText.innerText =
+    "Selected: Marble " + (id + 1);
+
+  flashSelection(id);
+}
+
+function flashSelection(id) {
+  UI.winnerFlash = 10;
+}
+
+// ======================================================
+// RACE START FLOW (WITH COUNTDOWN)
+// ======================================================
+
+function startRaceFlow() {
+  if (selectedMarble === null) {
+    UI.statusText.innerText = "Pick a marble first!";
+    return;
+  }
+
+  setUIState(UIState.COUNTDOWN);
+
+  UI.countdown = 3;
+  UI.countdownActive = true;
+
+  runCountdown();
+}
+
+function runCountdown() {
+  if (UI.countdown <= 0) {
+    startActualRace();
+    return;
+  }
+
+  UI.statusText.innerText = "Starting in " + UI.countdown;
+
+  setTimeout(() => {
+    UI.countdown--;
+    runCountdown();
+  }, 800);
+}
+
+function startActualRace() {
+  startRace(); // from ENGINE (PART 1)
+
+  setUIState(UIState.RACING);
+
+  UI.statusText.innerText = "RACE STARTED!";
+}
+
+// ======================================================
+// UI STATE MANAGEMENT
+// ======================================================
+
+function setUIState(state) {
+  currentUI = state;
+}
+
+// ======================================================
+// RENDER UI OVERLAY ON CANVAS
+// ======================================================
+
+function drawUIOverlay() {
+  if (currentUI === UIState.COUNTDOWN) {
+    drawCountdown();
+  }
+
+  if (currentUI === UIState.RESULTS) {
+    drawResultsScreen();
+  }
+
+  if (UI.winnerFlash > 0) {
+    UI.winnerFlash--;
+  }
+}
+
+// ======================================================
+// COUNTDOWN VISUAL
+// ======================================================
+
+function drawCountdown() {
+  ctx.save();
+
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 80px Arial";
+  ctx.textAlign = "center";
+
+  ctx.fillText(UI.countdown, W/2, H/2);
+
+  ctx.restore();
+}
+
+// ======================================================
+// RESULTS SCREEN
+// ======================================================
+
+function drawResultsScreen() {
+  const winner = getWinner();
+
+  ctx.save();
+
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle = MARBLE_COLORS[winner.id];
+  ctx.font = "bold 50px Arial";
+  ctx.textAlign = "center";
+
+  ctx.fillText("WINNER!", W/2, H/2 - 40);
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "30px Arial";
+
+  ctx.fillText(
+    "Marble " + (winner.id + 1),
+    W/2,
+    H/2 + 20
+  );
+
+  if (selectedMarble === winner.id) {
+    ctx.fillStyle = "#00ff88";
+    ctx.fillText("YOU WON!", W/2, H/2 + 80);
+  } else {
+    ctx.fillStyle = "#ff4444";
+    ctx.fillText("YOU LOST", W/2, H/2 + 80);
+  }
+
+  ctx.restore();
+}
+
+// ======================================================
+// WINNER CALCULATION
+// ======================================================
+
+function getWinner() {
+  return [...marbles].sort(
+    (a,b) => a.finishTime - b.finishTime
+  )[0];
+}
+
+// ======================================================
+// MAIN GAME LOOP EXTENSION
+// ======================================================
+
+function gameLoopExtension() {
+  drawUIOverlay();
+
+  if (currentUI === UIState.FINISHED) {
+    setUIState(UIState.RESULTS);
+  }
+
+  requestAnimationFrame(gameLoopExtension);
+}
+
+// ======================================================
+// CONNECT TO ENGINE UPDATE LOOP
+// ======================================================
+
+function updateGame() {
+  engine.update();
+
+  if (engine.marbles.every(m => m.finished)) {
+    setUIState(UIState.FINISHED);
+  }
+
+  requestAnimationFrame(updateGame);
+}
+
+// ======================================================
+// INPUT HOOKS
+// ======================================================
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === " ") {
+    startRaceFlow();
+  }
+});
+
+// ======================================================
+// BOOT SYSTEM
+// ======================================================
+
+window.addEventListener("load", () => {
+  initUI();
+
+  updateGame();
+  gameLoopExtension();
+});
+
+// ======================================================
+// GLOBAL EXPORT (for debugging)
+// ======================================================
+
+window._UI = {
+  UI,
+  setUIState,
+  startRaceFlow,
+  selectMarble
+};
+
+</script>
