@@ -186,77 +186,110 @@ function makeObstacles(){
 
 class Marble {
   constructor(i){
-    this.i=i;
-    this.x=60;
-    this.y=120+i*60;
+    this.i = i;
 
-    this.vx=0;
-    this.base=2.2+Math.random()*1.5;
+    this.x = 60;
+    this.y = 120 + i * 60;
 
-    this.finished=false;
-    this.finishTime=0;
+    // SAME SPEED FOR ALL MARBLES (IMPORTANT FIX)
+    this.baseSpeed = 2.8;
 
-    this.glow=0;
-    this.trail=[];
+    this.vx = this.baseSpeed;
+
+    this.finished = false;
+    this.finishTime = 0;
+
+    // ⏱ slow effect timer (NEW SYSTEM)
+    this.slowTimer = 0;
+
+    this.trail = [];
+    this.glow = 0;
+  }
+
+  hitObstacle() {
+    // trigger 2 second slow effect
+    this.slowTimer = 120; // 120 frames ≈ 2 seconds at 60fps
+
+    this.glow = 10;
+
+    particles.push(new Particle(this.x, this.y, COLORS[this.i]));
   }
 
   update(){
-    if(currentState!==GameState.RUNNING) return;
+
+    if(currentState !== GameState.RUNNING) return;
     if(this.finished) return;
 
-    const slow = obstacles[this.i]*0.28;
-    const target = this.base - slow;
+    // =========================
+    // SPEED SYSTEM (FIXED RULE)
+    // =========================
 
-    this.vx += (target-this.vx)*0.08;
-    this.x += this.vx*globalSlowMotion;
+    let speed = this.baseSpeed;
 
-    this.glow*=0.9;
+    // if slowed → reduce speed temporarily
+    if(this.slowTimer > 0){
+      speed *= 0.45; // slow mode
 
-    this.trail.push({x:this.x,y:this.y});
-    if(this.trail.length>10) this.trail.shift();
+      this.slowTimer--;
 
-    if(Math.random()<0.01 && obstacles[this.i]>0){
-      this.glow=8;
-      particles.push(new Particle(this.x,this.y,COLORS[this.i]));
+      if(this.slowTimer === 0){
+        this.glow = 0; // reset effect
+      }
     }
 
-    if(this.x>W-90){
-      this.finished=true;
-      this.finishTime=performance.now();
+    // apply movement
+    this.vx = speed;
+    this.x += this.vx * globalSlowMotion;
+
+    // trail
+    this.trail.push({x:this.x, y:this.y});
+    if(this.trail.length > 10) this.trail.shift();
+
+    // finish logic
+    if(this.x > W - 90){
+      this.finished = true;
+      this.finishTime = performance.now();
 
       for(let i=0;i<25;i++){
         particles.push(new Particle(this.x,this.y,COLORS[this.i]));
       }
 
-      globalSlowMotion=0.4;
+      globalSlowMotion = 0.4;
     }
   }
 
   draw(){
+
+    // trail
     this.trail.forEach((t,i)=>{
-      ctx.globalAlpha=i/this.trail.length*0.4;
-      ctx.fillStyle=COLORS[this.i];
-      ctx.fillRect(t.x,t.y,6,6);
+      ctx.globalAlpha = i / this.trail.length * 0.4;
+      ctx.fillStyle = COLORS[this.i];
+      ctx.fillRect(t.x, t.y, 6, 6);
     });
 
-    ctx.globalAlpha=1;
+    ctx.globalAlpha = 1;
 
-    let r=14+this.glow;
+    let r = 14 + this.glow;
 
-    ctx.shadowBlur=15;
-    ctx.shadowColor=COLORS[this.i];
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = COLORS[this.i];
 
-    let g=ctx.createRadialGradient(this.x-5,this.y-5,2,this.x,this.y,r);
-    g.addColorStop(0,"#fff");
-    g.addColorStop(0.3,COLORS[this.i]);
-    g.addColorStop(1,"#000");
+    let g = ctx.createRadialGradient(
+      this.x - 5, this.y - 5, 2,
+      this.x, this.y, r
+    );
 
-    ctx.fillStyle=g;
+    g.addColorStop(0, "#fff");
+    g.addColorStop(0.3, COLORS[this.i]);
+    g.addColorStop(1, "#000");
+
+    ctx.fillStyle = g;
+
     ctx.beginPath();
-    ctx.arc(this.x,this.y,r,0,Math.PI*2);
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.shadowBlur=0;
+    ctx.shadowBlur = 0;
   }
 }
 
