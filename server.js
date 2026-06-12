@@ -2,20 +2,27 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-// in-memory storage (you can upgrade to DB later)
-let codes = {}; 
-// format: { "123456": { used:false } }
+// =========================
+// ROOT TEST ROUTE
+// =========================
 
-app.post("/generate", (req, res) => {
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-  codes[code] = { used: false };
-
-  res.json({ code });
+app.get("/", (req, res) => {
+  res.send("🎮 Marble Race Server Running!");
 });
+
+// =========================
+// CODE STORAGE
+// =========================
+
+let codes = {};
+
+// =========================
+// VALIDATE CODE
+// =========================
 
 app.post("/validate", (req, res) => {
   const { code } = req.body;
@@ -28,8 +35,12 @@ app.post("/validate", (req, res) => {
     return res.json({ valid: false, message: "Code already used" });
   }
 
-  return res.json({ valid: true });
+  res.json({ valid: true });
 });
+
+// =========================
+// USE CODE
+// =========================
 
 app.post("/use", (req, res) => {
   const { code } = req.body;
@@ -43,8 +54,28 @@ app.post("/use", (req, res) => {
   res.json({ success: true });
 });
 
-app.get("/codes", (req, res) => {
-  res.json(codes);
+// =========================
+// OPTIONAL: TEMP CODE CREATOR (FOR TESTING)
+// =========================
+
+app.post("/add-code", (req, res) => {
+  const { code } = req.body;
+
+  if (!code) {
+    return res.json({ success: false, message: "No code provided" });
+  }
+
+  codes[code] = { used: false };
+
+  res.json({ success: true });
 });
 
-app.listen(3000, () => console.log("Server running"));
+// =========================
+// START SERVER
+// =========================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("Marble Race Server Running on port " + PORT);
+});
