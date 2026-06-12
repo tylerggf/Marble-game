@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Marble Race ULTRA</title>
+<title>Marble Race FIXED</title>
 
 <style>
 body {
@@ -26,7 +26,6 @@ canvas {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  border-radius: 12px;
 }
 
 button {
@@ -36,28 +35,19 @@ button {
   border: none;
   cursor: pointer;
 }
-
-input {
-  padding: 6px;
-  border-radius: 6px;
-  border: none;
-}
 </style>
 </head>
 
 <body>
 
 <div id="ui">
-  <h2>MARBLE RACE ULTRA</h2>
-
-  <input id="codeInput" placeholder="Enter game code">
-  <button onclick="submitCode()">Join</button>
+  <h2>MARBLE RACE</h2>
 
   <div id="buttons"></div>
 
   <button onclick="startGame()">START</button>
 
-  <h3 id="status">Enter a code to play</h3>
+  <h3 id="status">Pick a marble</h3>
 </div>
 
 <canvas id="c" width="1000" height="600"></canvas>
@@ -65,13 +55,9 @@ input {
 <script>
 
 // =========================
-// SERVER
-// =========================
-const SERVER = "https://YOUR-RENDER-URL";
-
-// =========================
 // CANVAS
 // =========================
+
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
 
@@ -86,52 +72,18 @@ const NAMES = ["Red","Blue","Green","Yellow","Purple","Orange","White"];
 // =========================
 // STATE
 // =========================
+
 let selected = null;
 let marbles = [];
 let obstacles = [];
 let particles = [];
 let state = "waiting";
 let winnerLocked = false;
-let activeCode = null;
-
-// =========================
-// CODE SYSTEM
-// =========================
-async function submitCode(){
-
-  const code = document.getElementById("codeInput").value;
-
-  const res = await fetch(SERVER + "/validate", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ code })
-  });
-
-  const data = await res.json();
-
-  if(!data.valid){
-    status.innerText = "❌ " + data.message;
-    return;
-  }
-
-  activeCode = code;
-  status.innerText = "✅ Code accepted";
-}
-
-async function useCode(){
-
-  if(!activeCode) return;
-
-  await fetch(SERVER + "/use", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ code: activeCode })
-  });
-}
 
 // =========================
 // OBSTACLES
 // =========================
+
 function makeObstacles(){
   obstacles=[];
   for(let i=0;i<LANES;i++){
@@ -142,6 +94,7 @@ function makeObstacles(){
 // =========================
 // PARTICLES
 // =========================
+
 class Particle {
   constructor(x,y,color){
     this.x=x;
@@ -169,6 +122,7 @@ class Particle {
 // =========================
 // MARBLE
 // =========================
+
 class Marble {
   constructor(i){
     this.i=i;
@@ -216,14 +170,11 @@ class Marble {
       state="finished";
 
       status.innerText="WINNER: "+NAMES[this.i];
-
-      useCode();
     }
   }
 
   draw(){
 
-    // trail
     for(let i=0;i<this.trail.length;i++){
       let t=this.trail[i];
       ctx.globalAlpha=i/this.trail.length*0.4;
@@ -233,21 +184,17 @@ class Marble {
 
     ctx.globalAlpha=1;
 
-    ctx.shadowBlur=15;
-    ctx.shadowColor=COLORS[this.i];
-
     ctx.fillStyle=COLORS[this.i];
     ctx.beginPath();
     ctx.arc(this.x,this.y,14,0,Math.PI*2);
     ctx.fill();
-
-    ctx.shadowBlur=0;
   }
 }
 
 // =========================
 // SETUP
 // =========================
+
 function setup(){
   marbles=[];
   for(let i=0;i<LANES;i++){
@@ -259,6 +206,7 @@ function setup(){
 // =========================
 // UI
 // =========================
+
 const status=document.getElementById("status");
 const buttons=document.getElementById("buttons");
 
@@ -280,15 +228,11 @@ function initUI(){
 // =========================
 // START GAME
 // =========================
+
 function startGame(){
 
-  if(!activeCode){
-    status.innerText="Enter valid code first!";
-    return;
-  }
-
   if(selected===null){
-    status.innerText="Pick a marble!";
+    status.innerText="Pick a marble first!";
     return;
   }
 
@@ -302,6 +246,7 @@ function startGame(){
 // =========================
 // LOOP
 // =========================
+
 function loop(){
 
   ctx.clearRect(0,0,W,H);
@@ -321,6 +266,7 @@ function loop(){
 // =========================
 // INIT
 // =========================
+
 initUI();
 setup();
 loop();
