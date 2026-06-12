@@ -1,306 +1,396 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Marble Race PRO+</title>
-
-<style>
-body {
-  margin: 0;
-  overflow: hidden;
-  font-family: Arial;
-  background: radial-gradient(#0b1220, #05070c);
-  color: white;
-}
-
-#ui {
-  position: absolute;
-  top: 10px;
-  width: 100%;
-  text-align: center;
-  z-index: 10;
-}
-
-button {
-  margin: 5px;
-  padding: 10px;
-  border: none;
-  cursor: pointer;
-  border-radius: 6px;
-  font-weight: bold;
-}
-
-button:hover {
-  transform: scale(1.05);
-}
-
-canvas {
-  display: block;
-  margin: auto;
-}
-</style>
-</head>
-
-<body>
-
-<div id="ui">
-  <h2>Pick Your Marble</h2>
-  <div id="buttons"></div>
-  <button onclick="startRace()">START RACE</button>
-  <h3 id="status"></h3>
-</div>
-
-<canvas id="c" width="1000" height="600"></canvas>
+<!-- =========================
+MARBLE RACE PRO+ ENGINE CORE
+SECTION 1: SYSTEM + PHYSICS + STATE
+========================= -->
 
 <script>
-const c = document.getElementById("c");
-const ctx = c.getContext("2d");
+// ======================================================
+// GLOBAL GAME CONFIG
+// ======================================================
 
-const W = c.width;
-const H = c.height;
+const GAME_CONFIG = {
+  canvasWidth: 1000,
+  canvasHeight: 600,
 
-const COLORS = ["#ff3b3b","#3b7bff","#3bff7a","#ffe93b","#b23bff","#ff8c3b","#ffffff"];
-const LANES = 7;
+  laneCount: 7,
+  maxObstaclesPerLane: 3,
 
-let selected = null;
+  marbleRadius: 14,
+
+  baseSpeedMin: 2.0,
+  baseSpeedMax: 3.6,
+
+  obstacleSlowFactor: 0.28,
+
+  finishLinePadding: 90,
+
+  particleLimit: 300,
+
+  debug: false
+};
+
+// ======================================================
+// CANVAS SETUP
+// ======================================================
+
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+canvas.width = GAME_CONFIG.canvasWidth;
+canvas.height = GAME_CONFIG.canvasHeight;
+
+// ======================================================
+// GAME STATE MANAGER
+// ======================================================
+
+const GameState = {
+  WAITING: "waiting",
+  RUNNING: "running",
+  FINISHED: "finished"
+};
+
+let currentState = GameState.WAITING;
+
+// ======================================================
+// CORE DATA STRUCTURES
+// ======================================================
+
+let selectedMarble = null;
+
 let marbles = [];
 let obstacles = [];
 let particles = [];
-let running = false;
-let slowMo = 1;
+
+let raceStartTime = 0;
+let raceEndTime = 0;
+
+let globalSlowMotion = 1;
+
+// ======================================================
+// COLOR SYSTEM (future shader upgrade ready)
+// ======================================================
+
+const MARBLE_COLORS = [
+  "#ff3b3b",
+  "#3b7bff",
+  "#3bff7a",
+  "#ffe93b",
+  "#b23bff",
+  "#ff8c3b",
+  "#ffffff"
+];
+
+// ======================================================
+// UTILITY FUNCTIONS
+// ======================================================
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function rand(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function randInt(min, max) {
+  return Math.floor(rand(min, max + 1));
+}
+
+// ======================================================
+// PARTICLE SYSTEM (CORE)
+// ======================================================
 
 class Particle {
-  constructor(x,y,color){
-    this.x=x;
-    this.y=y;
-    this.vx=(Math.random()-0.5)*2.5;
-    this.vy=(Math.random()-0.5)*2.5;
-    this.life=50;
-    this.color=color;
+  constructor(x, y, color, intensity = 1) {
+    this.x = x;
+    this.y = y;
+
+    this.vx = (Math.random() - 0.5) * 3 * intensity;
+    this.vy = (Math.random() - 0.5) * 3 * intensity;
+
+    this.life = randInt(30, 60);
+    this.maxLife = this.life;
+
+    this.color = color;
+    this.size = rand(1.5, 3.5);
   }
 
-  update(){
-    this.x+=this.vx;
-    this.y+=this.vy;
+  update() {
+    this.x += this.vx * globalSlowMotion;
+    this.y += this.vy * globalSlowMotion;
+
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+
     this.life--;
   }
 
-  draw(){
-    ctx.globalAlpha = this.life/50;
+  draw() {
+    ctx.globalAlpha = this.life / this.maxLife;
     ctx.fillStyle = this.color;
-    ctx.fillRect(this.x,this.y,2,2);
+
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.globalAlpha = 1;
+  }
+
+  isDead() {
+    return this.life <= 0;
   }
 }
 
+// ======================================================
+// OBSTACLE SYSTEM (DATA ONLY)
+// ======================================================
+
+class LaneObstacles {
+  constructor(laneId) {
+    this.laneId = laneId;
+    this.count = randInt(0, GAME_CONFIG.maxObstaclesPerLane);
+    this.positions = [];
+
+    this.generatePositions();
+  }
+
+  generatePositions() {
+    for (let i = 0; i < this.count; i++) {
+      this.positions.push({
+        x: 300 + i * 120,
+        type: randInt(0, 2),
+        active: true
+      });
+    }
+  }
+
+  getPenalty() {
+    return this.count * GAME_CONFIG.obstacleSlowFactor;
+  }
+}
+
+// ======================================================
+// MARBLE PHYSICS SYSTEM
+// ======================================================
+
 class Marble {
-  constructor(i){
-    this.i=i;
-    this.x=60;
-    this.y=120+i*60;
+  constructor(id, laneY) {
+    this.id = id;
 
-    this.vx=0;
-    this.acc=0;
-    this.base=2.4+Math.random()*1.2;
+    this.x = 60;
+    this.y = laneY;
 
-    this.finished=false;
-    this.finishTime=0;
-    this.glow=0;
-    this.trail=[];
-  }
+    this.vx = 0;
+    this.ax = 0;
 
-  update(){
-    if(!running || this.finished) return;
-
-    const penalty = obstacles[this.i]*0.28;
-    const target = this.base - penalty;
-
-    this.acc = (target - this.vx)*0.08;
-    this.vx += this.acc;
-    this.x += this.vx * slowMo;
-
-    // trail
-    this.trail.push({x:this.x,y:this.y});
-    if(this.trail.length > 8) this.trail.shift();
-
-    this.glow *= 0.92;
-
-    if(this.x >= W-90){
-      this.finished = true;
-      this.finishTime = performance.now();
-
-      for(let i=0;i<20;i++){
-        particles.push(new Particle(this.x,this.y,COLORS[this.i]));
-      }
-
-      slowMo = 0.4; // slow motion finish effect
-    }
-
-    if(Math.random() < 0.015 && obstacles[this.i] > 0){
-      this.glow = 10;
-      particles.push(new Particle(this.x,this.y,COLORS[this.i]));
-    }
-  }
-
-  draw(){
-    // trail
-    for(let i=0;i<this.trail.length;i++){
-      let t=this.trail[i];
-      ctx.globalAlpha = i/this.trail.length*0.5;
-      ctx.fillStyle = COLORS[this.i];
-      ctx.beginPath();
-      ctx.arc(t.x,t.y,8,0,Math.PI*2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    let r = 14 + this.glow;
-
-    // shadow
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.beginPath();
-    ctx.arc(this.x+3,this.y+3,r,0,Math.PI*2);
-    ctx.fill();
-
-    // glow ring
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = COLORS[this.i];
-
-    // marble body (3D-ish)
-    let g = ctx.createRadialGradient(
-      this.x-6,this.y-6,2,
-      this.x,this.y,r
+    this.baseSpeed = rand(
+      GAME_CONFIG.baseSpeedMin,
+      GAME_CONFIG.baseSpeedMax
     );
 
-    g.addColorStop(0,"#fff");
-    g.addColorStop(0.25,COLORS[this.i]);
-    g.addColorStop(1,"#000");
+    this.finished = false;
+    this.finishTime = 0;
 
-    ctx.fillStyle = g;
+    this.trail = [];
+
+    this.glow = 0;
+    this.wobble = rand(0, Math.PI * 2);
+
+    this.lanePenalty = 0;
+  }
+
+  applyPhysics() {
+    if (currentState !== GameState.RUNNING) return;
+    if (this.finished) return;
+
+    const penalty = obstacles[this.id].getPenalty();
+    const targetSpeed = this.baseSpeed - penalty;
+
+    this.ax = (targetSpeed - this.vx) * 0.08;
+    this.vx += this.ax;
+
+    this.vx = clamp(this.vx, 0, 6);
+
+    this.x += this.vx * globalSlowMotion;
+
+    this.wobble += 0.1;
+
+    // trail system
+    this.trail.push({ x: this.x, y: this.y });
+
+    if (this.trail.length > 10) {
+      this.trail.shift();
+    }
+
+    // finish condition
+    if (this.x >= GAME_CONFIG.canvasWidth - GAME_CONFIG.finishLinePadding) {
+      this.finishRace();
+    }
+  }
+
+  finishRace() {
+    if (this.finished) return;
+
+    this.finished = true;
+    this.finishTime = performance.now();
+
+    this.triggerFinishParticles();
+
+    globalSlowMotion = 0.35;
+  }
+
+  triggerFinishParticles() {
+    for (let i = 0; i < 25; i++) {
+      particles.push(
+        new Particle(this.x, this.y, MARBLE_COLORS[this.id], 1.5)
+      );
+    }
+  }
+
+  drawTrail() {
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i];
+
+      ctx.globalAlpha = i / this.trail.length * 0.4;
+      ctx.fillStyle = MARBLE_COLORS[this.id];
+
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  drawBody() {
+    const r = GAME_CONFIG.marbleRadius + Math.sin(this.wobble) * 1.5;
+
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = MARBLE_COLORS[this.id];
+
+    const grad = ctx.createRadialGradient(
+      this.x - 5,
+      this.y - 5,
+      2,
+      this.x,
+      this.y,
+      r
+    );
+
+    grad.addColorStop(0, "#ffffff");
+    grad.addColorStop(0.3, MARBLE_COLORS[this.id]);
+    grad.addColorStop(1, "#000000");
+
+    ctx.fillStyle = grad;
+
     ctx.beginPath();
-    ctx.arc(this.x,this.y,r,0,Math.PI*2);
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.shadowBlur = 0;
   }
-}
 
-function makeObstacles(){
-  obstacles=[];
-  for(let i=0;i<LANES;i++){
-    obstacles.push(Math.floor(Math.random()*4)); // 0–3
+  draw() {
+    this.drawTrail();
+    this.drawBody();
   }
 }
 
-function drawTrack(){
-  // gradient background
-  let bg = ctx.createLinearGradient(0,0,0,H);
-  bg.addColorStop(0,"#0c1424");
-  bg.addColorStop(1,"#05070c");
-  ctx.fillStyle = bg;
-  ctx.fillRect(0,0,W,H);
+// ======================================================
+// RACE ENGINE (CORE CONTROL)
+// ======================================================
 
-  for(let i=0;i<LANES;i++){
-    let y=120+i*60;
+class RaceEngine {
+  constructor() {
+    this.lanes = [];
+    this.marbles = [];
+  }
 
-    // lane line glow
-    ctx.strokeStyle = COLORS[i];
-    ctx.globalAlpha = 0.15;
-    ctx.lineWidth = 2;
+  init() {
+    this.createLanes();
+    this.createMarbles();
+  }
 
-    ctx.beginPath();
-    ctx.moveTo(0,y);
-    ctx.lineTo(W,y);
-    ctx.stroke();
+  createLanes() {
+    obstacles = [];
 
-    ctx.globalAlpha = 1;
+    for (let i = 0; i < GAME_CONFIG.laneCount; i++) {
+      obstacles.push(new LaneObstacles(i));
+    }
+  }
 
-    // obstacles
-    for(let j=0;j<obstacles[i];j++){
-      let x = 320 + j*120;
+  createMarbles() {
+    marbles = [];
 
-      ctx.fillStyle = "#444";
-      ctx.fillRect(x,y-10,22,22);
+    for (let i = 0; i < GAME_CONFIG.laneCount; i++) {
+      const y = 120 + i * 60;
+      marbles.push(new Marble(i, y));
+    }
+  }
 
-      ctx.strokeStyle = COLORS[i];
-      ctx.strokeRect(x,y-10,22,22);
+  update() {
+    if (currentState !== GameState.RUNNING) return;
+
+    marbles.forEach(m => m.applyPhysics());
+
+    particles.forEach(p => p.update());
+
+    particles = particles.filter(p => !p.isDead());
+
+    this.checkRaceEnd();
+  }
+
+  checkRaceEnd() {
+    const allFinished = marbles.every(m => m.finished);
+
+    if (allFinished && currentState === GameState.RUNNING) {
+      currentState = GameState.FINISHED;
+      raceEndTime = performance.now();
+
+      globalSlowMotion = 1;
     }
   }
 }
 
-function setup(){
-  marbles=[];
-  for(let i=0;i<LANES;i++){
-    marbles.push(new Marble(i));
-  }
+// ======================================================
+// GLOBAL ENGINE INSTANCE
+// ======================================================
+
+const engine = new RaceEngine();
+
+engine.init();
+
+// ======================================================
+// STATE CONTROL FUNCTIONS
+// ======================================================
+
+function startRace() {
+  if (selectedMarble === null) return;
+
+  engine.init();
+
+  currentState = GameState.RUNNING;
+  raceStartTime = performance.now();
+
+  globalSlowMotion = 1;
 }
 
-function animate(){
-  ctx.clearRect(0,0,W,H);
-
-  drawTrack();
-
-  marbles.forEach(m=>{
-    m.update();
-    m.draw();
-  });
-
-  particles.forEach((p,i)=>{
-    p.update();
-    p.draw();
-    if(p.life<=0) particles.splice(i,1);
-  });
-
-  if(running && marbles.every(m=>m.finished)){
-    running=false;
-
-    let winner = [...marbles].sort((a,b)=>a.finishTime-b.finishTime)[0];
-
-    document.getElementById("status").innerText =
-      "WINNER: " + COLORS[winner.i].toUpperCase() +
-      " | YOU PICKED: " + (selected!==null ? COLORS[selected].toUpperCase() : "NONE");
-
-    slowMo = 1;
-  }
-
-  requestAnimationFrame(animate);
+function pickMarble(id) {
+  selectedMarble = id;
 }
 
-function startRace(){
-  if(selected === null){
-    alert("Pick a marble first");
-    return;
-  }
+// ======================================================
+// DEBUG EXPORT (for later sections)
+// ======================================================
 
-  makeObstacles();
-  setup();
-  running = true;
-  slowMo = 1;
+window._ENGINE = {
+  engine,
+  GameState,
+  startRace,
+  pickMarble,
+  marbles,
+  obstacles,
+  particles
+};
 
-  document.getElementById("status").innerText = "RACING...";
-}
-
-function pick(i){
-  selected = i;
-  document.getElementById("status").innerText =
-    "SELECTED: " + COLORS[i].toUpperCase();
-}
-
-// UI
-const btn=document.getElementById("buttons");
-COLORS.forEach((c,i)=>{
-  let b=document.createElement("button");
-  b.style.background=c;
-  b.innerText=" ";
-  b.style.width="30px";
-  b.style.height="30px";
-  b.onclick=()=>pick(i);
-  btn.appendChild(b);
-});
-
-setup();
-animate();
 </script>
-
-</body>
-</html>
