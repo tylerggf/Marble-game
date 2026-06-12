@@ -1,16 +1,50 @@
 const express = require("express");
-const path = require("path");
+const cors = require("cors");
 
 const app = express();
+app.use(cors());
+app.use(express.json());
 
-// if you have css/js files too
-app.use(express.static(__dirname));
+// in-memory storage (you can upgrade to DB later)
+let codes = {}; 
+// format: { "123456": { used:false } }
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "Game.html"));
+app.post("/generate", (req, res) => {
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+  codes[code] = { used: false };
+
+  res.json({ code });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+app.post("/validate", (req, res) => {
+  const { code } = req.body;
+
+  if (!codes[code]) {
+    return res.json({ valid: false, message: "Invalid code" });
+  }
+
+  if (codes[code].used) {
+    return res.json({ valid: false, message: "Code already used" });
+  }
+
+  return res.json({ valid: true });
 });
+
+app.post("/use", (req, res) => {
+  const { code } = req.body;
+
+  if (!codes[code]) {
+    return res.json({ success: false });
+  }
+
+  codes[code].used = true;
+
+  res.json({ success: true });
+});
+
+app.get("/codes", (req, res) => {
+  res.json(codes);
+});
+
+app.listen(3000, () => console.log("Server running"));
