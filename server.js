@@ -7,21 +7,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// =========================
-// SERVE FRONTEND FILES
-// =========================
-app.use(express.static(path.join(__dirname, "public")));
+// ✅ SERVE FILES FROM ROOT FOLDER (IMPORTANT FIX)
+app.use(express.static(__dirname));
 
-// Root opens your game automatically
+// ✅ ROOT OPENS YOUR GAME FILE
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "Game.html"));
+  res.sendFile(path.join(__dirname, "Game.html"));
 });
 
 // =========================
-// API (KEEP YOUR GAME LOGIC)
+// API SYSTEM (UNCHANGED)
 // =========================
 
 let codes = {};
+
+app.post("/add-code", (req, res) => {
+  const { code } = req.body;
+
+  if (!code) return res.json({ success: false });
+
+  codes[code] = { used: false };
+
+  res.json({ success: true });
+});
 
 app.post("/validate", (req, res) => {
   const { code } = req.body;
@@ -40,21 +48,9 @@ app.post("/validate", (req, res) => {
 app.post("/use", (req, res) => {
   const { code } = req.body;
 
-  if (!codes[code]) {
-    return res.json({ success: false });
-  }
+  if (!codes[code]) return res.json({ success: false });
 
   codes[code].used = true;
-
-  res.json({ success: true });
-});
-
-app.post("/add-code", (req, res) => {
-  const { code } = req.body;
-
-  if (!code) return res.json({ success: false });
-
-  codes[code] = { used: false };
 
   res.json({ success: true });
 });
