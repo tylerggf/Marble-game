@@ -2,13 +2,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Marble Race PRO ONLINE</title>
+<title>Marble Race ULTRA</title>
 
 <style>
 body {
   margin: 0;
   overflow: hidden;
-  background: #05070c;
+  background: radial-gradient(circle at center, #0b1020, #05070c);
   font-family: Arial;
   color: white;
 }
@@ -26,6 +26,7 @@ canvas {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 10px rgba(0,0,0,0.6));
 }
 
 button {
@@ -41,17 +42,16 @@ button {
 <body>
 
 <div id="ui">
-  <h2>MARBLE RACE ONLINE</h2>
+  <h2>MARBLE RACE ULTRA</h2>
 
-  <input id="codeInput" placeholder="Enter game code">
+  <input id="codeInput" placeholder="Enter code">
   <button onclick="submitCode()">Join</button>
 
   <div id="buttons"></div>
 
-  <button onclick="startRace()">START</button>
-  <button onclick="generateCode()">ADMIN: Generate Code</button>
+  <button onclick="startGame()">START</button>
 
-  <h3 id="status">Enter Code</h3>
+  <h3 id="status">Enter code</h3>
 </div>
 
 <canvas id="c" width="1000" height="600"></canvas>
@@ -59,7 +59,13 @@ button {
 <script>
 
 // =========================
-// CORE
+// SERVER
+// =========================
+
+const SERVER = "https://YOUR-RENDER-URL";
+
+// =========================
+// CANVAS
 // =========================
 
 const c = document.getElementById("c");
@@ -75,6 +81,7 @@ const NAMES = ["Red","Blue","Green","Yellow","Purple","Orange","White"];
 
 let selected = null;
 let marbles = [];
+let particles = [];
 let obstacles = [];
 let state = "waiting";
 let winnerLocked = false;
@@ -82,54 +89,75 @@ let winnerLocked = false;
 let activeCode = null;
 
 // =========================
-// SERVER URL
+// PARTICLES (IMPROVED)
 // =========================
 
-const SERVER = "https://YOUR-RENDER-URL";
+class Particle {
+  constructor(x,y,color){
+    this.x=x;
+    this.y=y;
+    this.vx=(Math.random()-0.5)*4;
+    this.vy=(Math.random()-0.5)*4;
+    this.life=60;
+    this.color=color;
+    this.size=Math.random()*3+1;
+  }
+
+  update(){
+    this.x+=this.vx;
+    this.y+=this.vy;
+    this.vx*=0.96;
+    this.vy*=0.96;
+    this.life--;
+  }
+
+  draw(){
+    ctx.globalAlpha=this.life/60;
+    ctx.fillStyle=this.color;
+    ctx.shadowBlur=10;
+    ctx.shadowColor=this.color;
+
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.shadowBlur=0;
+    ctx.globalAlpha=1;
+  }
+}
 
 // =========================
 // CODE SYSTEM
 // =========================
 
-// ADMIN: generate code from server
-async function generateCode() {
-  const res = await fetch(SERVER + "/generate", {
-    method: "POST"
+async function submitCode(){
+
+  const code = document.getElementById("codeInput").value;
+
+  const res = await fetch(SERVER+"/validate",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({code})
   });
 
   const data = await res.json();
 
-  alert("GAME CODE: " + data.code);
-}
-
-// PLAYER: validate code
-async function submitCode() {
-
-  const input = document.getElementById("codeInput").value;
-
-  const res = await fetch(SERVER + "/validate", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ code: input })
-  });
-
-  const data = await res.json();
-
-  if (!data.valid) {
-    status.innerText = "❌ " + data.message;
+  if(!data.valid){
+    status.innerText="❌ "+data.message;
     return;
   }
 
-  activeCode = input;
-  status.innerText = "✅ Code accepted";
+  activeCode = code;
+  status.innerText="✅ Code accepted";
 }
 
-// consume code (one-time use)
-async function useCode(code) {
-  await fetch(SERVER + "/use", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ code })
+async function useCode(){
+  if(!activeCode) return;
+
+  await fetch(SERVER+"/use",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({code:activeCode})
   });
 }
 
@@ -145,7 +173,7 @@ function makeObstacles(){
 }
 
 // =========================
-// MARBLE
+// MARBLE (ULTRA FEEL)
 // =========================
 
 class Marble {
@@ -154,56 +182,87 @@ class Marble {
     this.x=60;
     this.y=120+i*60;
 
-    this.baseSpeed=2.8;
-    this.slowTimer=0;
+    this.v=0;
+    this.target=2.8;
 
-    this.finished=false;
+    this.slow=0;
+
+    this.r=14;
+    this.stretch=1;
+
+    this.trail=[];
   }
 
   update(){
 
     if(state!=="running") return;
-    if(this.finished) return;
+    if(winnerLocked) return;
 
-    let speed=this.baseSpeed;
+    // smooth acceleration
+    this.v += (this.target - this.v)*0.08;
 
-    if(this.slowTimer>0){
+    let speed=this.v;
+
+    if(this.slow>0){
       speed*=0.45;
-      this.slowTimer--;
+      this.slow--;
+      this.stretch=1.3;
+    } else {
+      this.stretch=1;
     }
 
-    this.x+=speed;
+    this.x += speed;
+
+    this.trail.push({x:this.x,y:this.y});
+    if(this.trail.length>12) this.trail.shift();
 
     // obstacles
     for(let j=0;j<obstacles[this.i];j++){
       let ox=380+j*180;
 
-      if(Math.abs(this.x-ox)<10 && this.slowTimer===0){
-        this.slowTimer=120;
+      if(Math.abs(this.x-ox)<10 && this.slow===0){
+        this.slow=120;
+        particles.push(new Particle(this.x,this.y,COLORS[this.i]));
       }
     }
 
     // WIN
-    if(!winnerLocked && this.x > W-90){
+    if(!winnerLocked && this.x>W-90){
 
-      winnerLocked = true;
-      this.finished = true;
-      state = "finished";
+      winnerLocked=true;
+      state="finished";
 
-      status.innerText = "WINNER: " + NAMES[this.i];
+      status.innerText="WINNER: "+NAMES[this.i];
 
-      // 🔥 consume code on win
-      if(activeCode){
-        useCode(activeCode);
-      }
+      useCode();
     }
   }
 
   draw(){
-    ctx.fillStyle = COLORS[this.i];
+
+    // trail glow
+    for(let i=0;i<this.trail.length;i++){
+      let t=this.trail[i];
+      ctx.globalAlpha=i/this.trail.length*0.3;
+      ctx.fillStyle=COLORS[this.i];
+      ctx.fillRect(t.x,t.y,6,6);
+    }
+
+    ctx.globalAlpha=1;
+
+    let w=this.r*this.stretch;
+    let h=this.r/this.stretch;
+
+    ctx.shadowBlur=20;
+    ctx.shadowColor=COLORS[this.i];
+
+    ctx.fillStyle=COLORS[this.i];
+
     ctx.beginPath();
-    ctx.arc(this.x,this.y,14,0,Math.PI*2);
+    ctx.ellipse(this.x,this.y,w,h,0,0,Math.PI*2);
     ctx.fill();
+
+    ctx.shadowBlur=0;
   }
 }
 
@@ -220,7 +279,49 @@ function setup(){
 }
 
 // =========================
-// UI
+// TRACK (PRETTY)
+// =========================
+
+function drawTrack(){
+
+  let g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#0c1224");
+  g.addColorStop(1,"#05070c");
+
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,H);
+
+  for(let i=0;i<LANES;i++){
+
+    let y=120+i*60;
+
+    ctx.strokeStyle="rgba(255,255,255,0.08)";
+    ctx.beginPath();
+    ctx.moveTo(0,y);
+    ctx.lineTo(W,y);
+    ctx.stroke();
+
+    ctx.shadowBlur=10;
+    ctx.shadowColor=COLORS[i];
+
+    ctx.strokeStyle="rgba(255,255,255,0.05)";
+    ctx.beginPath();
+    ctx.moveTo(0,y);
+    ctx.lineTo(W,y);
+    ctx.stroke();
+
+    ctx.shadowBlur=0;
+
+    for(let j=0;j<obstacles[i];j++){
+      let x=380+j*180;
+      ctx.fillStyle="#444";
+      ctx.fillRect(x,y-10,22,22);
+    }
+  }
+}
+
+// =========================
+// GAME FLOW
 // =========================
 
 const status=document.getElementById("status");
@@ -241,19 +342,15 @@ function initUI(){
   });
 }
 
-// =========================
-// START GAME
-// =========================
-
-function startRace(){
+function startGame(){
 
   if(!activeCode){
-    status.innerText="Enter valid code first!";
+    status.innerText="Enter code first!";
     return;
   }
 
   if(selected===null){
-    status.innerText="Pick marble first!";
+    status.innerText="Pick marble!";
     return;
   }
 
@@ -272,9 +369,15 @@ function loop(){
 
   ctx.clearRect(0,0,W,H);
 
-  marbles.forEach(m=>{
-    m.update();
-    m.draw();
+  drawTrack();
+
+  marbles.forEach(m=>m.update());
+  marbles.forEach(m=>m.draw());
+
+  particles.forEach((p,i)=>{
+    p.update();
+    p.draw();
+    if(p.life<=0) particles.splice(i,1);
   });
 
   requestAnimationFrame(loop);
