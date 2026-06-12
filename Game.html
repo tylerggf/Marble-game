@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Marble Race LOBBY SYSTEM</title>
+<title>Marble Race PRO ONLINE</title>
 
 <style>
 body {
@@ -41,41 +41,25 @@ button {
 <body>
 
 <div id="ui">
-  <h2>MARBLE LOBBY RACE</h2>
+  <h2>MARBLE RACE ONLINE</h2>
 
-  <input id="codeInput" placeholder="Enter lobby code">
+  <input id="codeInput" placeholder="Enter game code">
   <button onclick="submitCode()">Join</button>
 
   <div id="buttons"></div>
-  <button onclick="startRaceFlow()">START</button>
 
-  <h3 id="status">Enter Code to Play</h3>
-
+  <button onclick="startRace()">START</button>
   <button onclick="generateCode()">ADMIN: Generate Code</button>
+
+  <h3 id="status">Enter Code</h3>
 </div>
 
 <canvas id="c" width="1000" height="600"></canvas>
 
-<!-- ADMIN PANEL -->
-<div id="adminPanel" style="
-position:absolute;
-top:0;left:0;
-width:100%;height:100%;
-background:rgba(0,0,0,0.95);
-display:none;
-z-index:9999;
-padding:20px;
-overflow:auto;
-">
-<h2>ADMIN PANEL</h2>
-<button onclick="closeAdmin()">Close</button>
-<div id="history"></div>
-</div>
-
 <script>
 
 // =========================
-// CORE STATE
+// CORE
 // =========================
 
 const c = document.getElementById("c");
@@ -89,87 +73,64 @@ const LANES = 7;
 const COLORS = ["#ff3b3b","#3b7bff","#3bff7a","#ffe93b","#b23bff","#ff8c3b","#ffffff"];
 const NAMES = ["Red","Blue","Green","Yellow","Purple","Orange","White"];
 
-let selectedMarble = null;
+let selected = null;
 let marbles = [];
 let obstacles = [];
-let particles = [];
-
 let state = "waiting";
 let winnerLocked = false;
 
-// =========================
-// LOBBY CODE SYSTEM
-// =========================
-
-let validCodes = JSON.parse(localStorage.getItem("validCodes") || "[]");
-let usedCodes = JSON.parse(localStorage.getItem("usedCodes") || "[]");
 let activeCode = null;
 
 // =========================
-// WIN HISTORY
+// SERVER URL
 // =========================
 
-let winHistory = JSON.parse(localStorage.getItem("winHistory") || "[]");
-
-// =========================
-// PARTICLES
-// =========================
-
-class Particle {
-  constructor(x,y,color){
-    this.x=x;
-    this.y=y;
-    this.vx=(Math.random()-0.5)*3;
-    this.vy=(Math.random()-0.5)*3;
-    this.life=50;
-    this.color=color;
-  }
-
-  update(){
-    this.x+=this.vx;
-    this.y+=this.vy;
-    this.life--;
-  }
-
-  draw(){
-    ctx.globalAlpha=this.life/50;
-    ctx.fillStyle=this.color;
-    ctx.fillRect(this.x,this.y,2,2);
-    ctx.globalAlpha=1;
-  }
-
-  dead(){ return this.life<=0; }
-}
+const SERVER = "https://YOUR-RENDER-URL";
 
 // =========================
 // CODE SYSTEM
 // =========================
 
-function generateCode(){
-  let code = Math.floor(100000 + Math.random()*900000).toString();
+// ADMIN: generate code from server
+async function generateCode() {
+  const res = await fetch(SERVER + "/generate", {
+    method: "POST"
+  });
 
-  validCodes.push(code);
-  localStorage.setItem("validCodes", JSON.stringify(validCodes));
+  const data = await res.json();
 
-  prompt("ONE-TIME LOBBY CODE:", code);
+  alert("GAME CODE: " + data.code);
 }
 
-function submitCode(){
+// PLAYER: validate code
+async function submitCode() {
 
-  let input = document.getElementById("codeInput").value;
+  const input = document.getElementById("codeInput").value;
 
-  if(usedCodes.includes(input)){
-    status.innerText = "❌ Code already used";
-    return;
-  }
+  const res = await fetch(SERVER + "/validate", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ code: input })
+  });
 
-  if(!validCodes.includes(input)){
-    status.innerText = "❌ Invalid code";
+  const data = await res.json();
+
+  if (!data.valid) {
+    status.innerText = "❌ " + data.message;
     return;
   }
 
   activeCode = input;
   status.innerText = "✅ Code accepted";
+}
+
+// consume code (one-time use)
+async function useCode(code) {
+  await fetch(SERVER + "/use", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ code })
+  });
 }
 
 // =========================
@@ -199,11 +160,6 @@ class Marble {
     this.finished=false;
   }
 
-  hitObstacle(){
-    this.slowTimer=120;
-    particles.push(new Particle(this.x,this.y,COLORS[this.i]));
-  }
-
   update(){
 
     if(state!=="running") return;
@@ -218,45 +174,33 @@ class Marble {
 
     this.x+=speed;
 
-    // OBSTACLES
+    // obstacles
     for(let j=0;j<obstacles[this.i];j++){
       let ox=380+j*180;
 
       if(Math.abs(this.x-ox)<10 && this.slowTimer===0){
-        this.hitObstacle();
+        this.slowTimer=120;
       }
     }
 
     // WIN
-    if(!winnerLocked && this.x>W-90){
+    if(!winnerLocked && this.x > W-90){
 
-      winnerLocked=true;
-      this.finished=true;
-      state="finished";
-
-      // MARK CODE USED
-      usedCodes.push(activeCode);
-      validCodes = validCodes.filter(c => c !== activeCode);
-
-      localStorage.setItem("usedCodes", JSON.stringify(usedCodes));
-      localStorage.setItem("validCodes", JSON.stringify(validCodes));
-
-      // WIN LOG
-      winHistory.push({
-        winner: NAMES[this.i],
-        color: COLORS[this.i],
-        code: activeCode,
-        time: new Date().toLocaleString()
-      });
-
-      localStorage.setItem("winHistory", JSON.stringify(winHistory));
+      winnerLocked = true;
+      this.finished = true;
+      state = "finished";
 
       status.innerText = "WINNER: " + NAMES[this.i];
+
+      // 🔥 consume code on win
+      if(activeCode){
+        useCode(activeCode);
+      }
     }
   }
 
   draw(){
-    ctx.fillStyle=COLORS[this.i];
+    ctx.fillStyle = COLORS[this.i];
     ctx.beginPath();
     ctx.arc(this.x,this.y,14,0,Math.PI*2);
     ctx.fill();
@@ -264,7 +208,7 @@ class Marble {
 }
 
 // =========================
-// GAME FLOW
+// SETUP
 // =========================
 
 function setup(){
@@ -273,25 +217,6 @@ function setup(){
     marbles.push(new Marble(i));
   }
   winnerLocked=false;
-}
-
-function startRaceFlow(){
-
-  if(!activeCode){
-    status.innerText="Enter lobby code first!";
-    return;
-  }
-
-  if(!selectedMarble){
-    status.innerText="Pick marble first!";
-    return;
-  }
-
-  makeObstacles();
-  setup();
-
-  state="running";
-  status.innerText="GO!";
 }
 
 // =========================
@@ -310,50 +235,33 @@ function initUI(){
     b.style.width="30px";
     b.style.height="30px";
 
-    b.onclick=()=>selectedMarble=i;
+    b.onclick=()=>selected=i;
 
     buttons.appendChild(b);
   });
 }
 
 // =========================
-// ADMIN PANEL (HIDDEN)
+// START GAME
 // =========================
 
-let buffer="";
+function startRace(){
 
-document.addEventListener("keydown",(e)=>{
-  buffer+=e.key.toLowerCase();
-  if(buffer.length>10) buffer=buffer.slice(-10);
-
-  if(buffer.includes("admin")){
-    openAdmin();
-    buffer="";
+  if(!activeCode){
+    status.innerText="Enter valid code first!";
+    return;
   }
-});
 
-function openAdmin(){
-  const panel=document.getElementById("adminPanel");
-  const hist=document.getElementById("history");
+  if(selected===null){
+    status.innerText="Pick marble first!";
+    return;
+  }
 
-  hist.innerHTML="";
+  makeObstacles();
+  setup();
 
-  winHistory.forEach((w,i)=>{
-    let div=document.createElement("div");
-    div.innerHTML=`
-      #${i+1}<br>
-      Winner: ${w.winner}<br>
-      Code: ${w.code}<br>
-      Time: ${w.time}<br><hr>
-    `;
-    hist.appendChild(div);
-  });
-
-  panel.style.display="block";
-}
-
-function closeAdmin(){
-  document.getElementById("adminPanel").style.display="none";
+  state="running";
+  status.innerText="GO!";
 }
 
 // =========================
@@ -369,17 +277,11 @@ function loop(){
     m.draw();
   });
 
-  particles.forEach((p,i)=>{
-    p.update();
-    p.draw();
-    if(p.dead()) particles.splice(i,1);
-  });
-
   requestAnimationFrame(loop);
 }
 
 // =========================
-// START
+// INIT
 // =========================
 
 initUI();
