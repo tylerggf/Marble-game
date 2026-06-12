@@ -6,28 +6,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// =========================
-// ROOT TEST ROUTE
-// =========================
-
+// ROOT ROUTE
 app.get("/", (req, res) => {
-  res.send("🎮 Marble Race Server Running!");
+  res.send("Marble Race Server Running!");
 });
 
-// =========================
-// CODE STORAGE
-// =========================
-
+// STORAGE
 let codes = {};
 
-// =========================
-// VALIDATE CODE
-// =========================
-
+// VALIDATE
 app.post("/validate", (req, res) => {
-  const { code } = req.body;
+  const code = req.body.code;
 
-  if (!codes[code]) {
+  if (!code || !codes[code]) {
     return res.json({ valid: false, message: "Invalid code" });
   }
 
@@ -35,47 +26,38 @@ app.post("/validate", (req, res) => {
     return res.json({ valid: false, message: "Code already used" });
   }
 
-  res.json({ valid: true });
+  return res.json({ valid: true });
 });
 
-// =========================
 // USE CODE
-// =========================
-
 app.post("/use", (req, res) => {
-  const { code } = req.body;
+  const code = req.body.code;
 
-  if (!codes[code]) {
+  if (!code || !codes[code]) {
     return res.json({ success: false });
   }
 
   codes[code].used = true;
 
-  res.json({ success: true });
+  return res.json({ success: true });
 });
 
-// =========================
-// OPTIONAL: TEMP CODE CREATOR (FOR TESTING)
-// =========================
-
+// TEMP CODE ADD (FOR TESTING ONLY)
 app.post("/add-code", (req, res) => {
-  const { code } = req.body;
+  const code = req.body.code;
 
   if (!code) {
-    return res.json({ success: false, message: "No code provided" });
+    return res.json({ success: false });
   }
 
   codes[code] = { used: false };
 
-  res.json({ success: true });
+  return res.json({ success: true });
 });
 
-// =========================
 // START SERVER
-// =========================
-
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Marble Race Server Running on port " + PORT);
+  console.log("Server running on port " + PORT);
 });
