@@ -13,7 +13,6 @@ body {
   color: white;
 }
 
-/* UI stays at top */
 #ui {
   position: absolute;
   top: 10px;
@@ -29,12 +28,19 @@ canvas {
   transform: translate(-50%, -50%);
   border-radius: 12px;
 }
+
 button {
   margin: 4px;
   padding: 8px;
   border-radius: 6px;
   border: none;
   cursor: pointer;
+}
+
+input {
+  padding: 6px;
+  border-radius: 6px;
+  border: none;
 }
 </style>
 </head>
@@ -51,7 +57,7 @@ button {
 
   <button onclick="startGame()">START</button>
 
-  <h3 id="status">Enter code to play</h3>
+  <h3 id="status">Enter a code to play</h3>
 </div>
 
 <canvas id="c" width="1000" height="600"></canvas>
@@ -61,13 +67,11 @@ button {
 // =========================
 // SERVER
 // =========================
-
 const SERVER = "https://YOUR-RENDER-URL";
 
 // =========================
 // CANVAS
 // =========================
-
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
 
@@ -76,13 +80,12 @@ const H = c.height;
 
 const LANES = 7;
 
-const COLORS = [
-  "#ff3b3b","#3b7bff","#3bff7a",
-  "#ffe93b","#b23bff","#ff8c3b","#ffffff"
-];
-
+const COLORS = ["#ff3b3b","#3b7bff","#3bff7a","#ffe93b","#b23bff","#ff8c3b","#ffffff"];
 const NAMES = ["Red","Blue","Green","Yellow","Purple","Orange","White"];
 
+// =========================
+// STATE
+// =========================
 let selected = null;
 let marbles = [];
 let obstacles = [];
@@ -92,10 +95,10 @@ let winnerLocked = false;
 let activeCode = null;
 
 // =========================
-// CODE SYSTEM (NO ADMIN UI)
+// CODE SYSTEM
 // =========================
-
 async function submitCode(){
+
   const code = document.getElementById("codeInput").value;
 
   const res = await fetch(SERVER + "/validate", {
@@ -116,6 +119,7 @@ async function submitCode(){
 }
 
 async function useCode(){
+
   if(!activeCode) return;
 
   await fetch(SERVER + "/use", {
@@ -126,9 +130,18 @@ async function useCode(){
 }
 
 // =========================
+// OBSTACLES
+// =========================
+function makeObstacles(){
+  obstacles=[];
+  for(let i=0;i<LANES;i++){
+    obstacles.push(Math.floor(Math.random()*3)+1);
+  }
+}
+
+// =========================
 // PARTICLES
 // =========================
-
 class Particle {
   constructor(x,y,color){
     this.x=x;
@@ -154,27 +167,15 @@ class Particle {
 }
 
 // =========================
-// OBSTACLES
-// =========================
-
-function makeObstacles(){
-  obstacles=[];
-  for(let i=0;i<LANES;i++){
-    obstacles.push(Math.floor(Math.random()*3)+1);
-  }
-}
-
-// =========================
 // MARBLE
 // =========================
-
 class Marble {
   constructor(i){
     this.i=i;
     this.x=60;
     this.y=120+i*60;
 
-    this.v=2.8;
+    this.speed=2.8;
     this.slow=0;
     this.trail=[];
     this.finished=false;
@@ -185,37 +186,36 @@ class Marble {
     if(state!=="running") return;
     if(this.finished || winnerLocked) return;
 
-    let speed = this.v;
+    let sp=this.speed;
 
     if(this.slow>0){
-      speed *= 0.4;
+      sp*=0.4;
       this.slow--;
     }
 
-    this.x += speed;
+    this.x+=sp;
 
-    // trail
     this.trail.push({x:this.x,y:this.y});
     if(this.trail.length>10) this.trail.shift();
 
     // obstacles
     for(let j=0;j<obstacles[this.i];j++){
-      let ox = 300 + j*200;
+      let ox=300+j*200;
 
       if(Math.abs(this.x-ox)<10 && this.slow===0){
-        this.slow = 90;
+        this.slow=90;
         particles.push(new Particle(this.x,this.y,COLORS[this.i]));
       }
     }
 
-    // finish
-    if(!winnerLocked && this.x > W-90){
+    // WIN
+    if(!winnerLocked && this.x>W-90){
 
-      winnerLocked = true;
-      this.finished = true;
-      state = "finished";
+      winnerLocked=true;
+      this.finished=true;
+      state="finished";
 
-      status.innerText = "WINNER: " + NAMES[this.i];
+      status.innerText="WINNER: "+NAMES[this.i];
 
       useCode();
     }
@@ -233,7 +233,6 @@ class Marble {
 
     ctx.globalAlpha=1;
 
-    // marble glow
     ctx.shadowBlur=15;
     ctx.shadowColor=COLORS[this.i];
 
@@ -249,7 +248,6 @@ class Marble {
 // =========================
 // SETUP
 // =========================
-
 function setup(){
   marbles=[];
   for(let i=0;i<LANES;i++){
@@ -259,56 +257,8 @@ function setup(){
 }
 
 // =========================
-// TRACK (NOW CLEAR + VISIBLE)
-// =========================
-
-function drawTrack(){
-
-  // background
-  let g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,"#0b1220");
-  g.addColorStop(1,"#05070c");
-
-  ctx.fillStyle=g;
-  ctx.fillRect(0,0,W,H);
-
-  for(let i=0;i<LANES;i++){
-
-    let y=120+i*60;
-
-    // lane line
-    ctx.strokeStyle="rgba(255,255,255,0.12)";
-    ctx.lineWidth=2;
-
-    ctx.beginPath();
-    ctx.moveTo(0,y);
-    ctx.lineTo(W,y);
-    ctx.stroke();
-
-    // lane glow center
-    ctx.strokeStyle="rgba(80,150,255,0.05)";
-    ctx.beginPath();
-    ctx.moveTo(0,y);
-    ctx.lineTo(W,y);
-    ctx.stroke();
-
-    // obstacles (VISIBLE BOXES)
-    for(let j=0;j<obstacles[i];j++){
-      let x=300 + j*200;
-
-      ctx.fillStyle="#333";
-      ctx.fillRect(x,y-10,24,24);
-
-      ctx.strokeStyle="#666";
-      ctx.strokeRect(x,y-10,24,24);
-    }
-  }
-}
-
-// =========================
 // UI
 // =========================
-
 const status=document.getElementById("status");
 const buttons=document.getElementById("buttons");
 
@@ -328,9 +278,8 @@ function initUI(){
 }
 
 // =========================
-// START
+// START GAME
 // =========================
-
 function startGame(){
 
   if(!activeCode){
@@ -353,12 +302,9 @@ function startGame(){
 // =========================
 // LOOP
 // =========================
-
 function loop(){
 
   ctx.clearRect(0,0,W,H);
-
-  drawTrack();
 
   marbles.forEach(m=>m.update());
   marbles.forEach(m=>m.draw());
@@ -375,7 +321,6 @@ function loop(){
 // =========================
 // INIT
 // =========================
-
 initUI();
 setup();
 loop();
