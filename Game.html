@@ -1,680 +1,391 @@
-<!-- =========================
-MARBLE RACE PRO+ ENGINE CORE
-SECTION 1: SYSTEM + PHYSICS + STATE
-========================= -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Marble Race PRO+ FULL</title>
+
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #05070c;
+  font-family: Arial;
+  color: white;
+}
+
+#ui {
+  position: absolute;
+  top: 10px;
+  width: 100%;
+  text-align: center;
+  z-index: 10;
+}
+
+button {
+  margin: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+canvas {
+  display: block;
+  margin: auto;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+  <h2>Pick Your Marble</h2>
+  <div id="buttons"></div>
+  <button onclick="startRaceFlow()">START</button>
+  <h3 id="status">Ready</h3>
+</div>
+
+<canvas id="c" width="1000" height="600"></canvas>
 
 <script>
-// ======================================================
-// GLOBAL GAME CONFIG
-// ======================================================
 
-const GAME_CONFIG = {
-  canvasWidth: 1000,
-  canvasHeight: 600,
+// =========================
+// CORE SETUP
+// =========================
 
-  laneCount: 7,
-  maxObstaclesPerLane: 3,
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
 
-  marbleRadius: 14,
+const W = c.width;
+const H = c.height;
 
-  baseSpeedMin: 2.0,
-  baseSpeedMax: 3.6,
+const LANES = 7;
 
-  obstacleSlowFactor: 0.28,
+const COLORS = ["#ff3b3b","#3b7bff","#3bff7a","#ffe93b","#b23bff","#ff8c3b","#ffffff"];
 
-  finishLinePadding: 90,
-
-  particleLimit: 300,
-
-  debug: false
-};
-
-// ======================================================
-// CANVAS SETUP
-// ======================================================
-
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
-
-canvas.width = GAME_CONFIG.canvasWidth;
-canvas.height = GAME_CONFIG.canvasHeight;
-
-// ======================================================
-// GAME STATE MANAGER
-// ======================================================
+// =========================
+// GAME STATE SYSTEM
+// =========================
 
 const GameState = {
-  WAITING: "waiting",
-  RUNNING: "running",
-  FINISHED: "finished"
+  WAITING:"waiting",
+  RUNNING:"running",
+  FINISHED:"finished"
+};
+
+const UIState = {
+  MENU:"menu",
+  COUNTDOWN:"countdown",
+  RACING:"racing",
+  RESULTS:"results"
 };
 
 let currentState = GameState.WAITING;
+let currentUI = UIState.MENU;
 
-// ======================================================
-// CORE DATA STRUCTURES
-// ======================================================
+// =========================
+// GLOBAL VARIABLES
+// =========================
 
 let selectedMarble = null;
-
 let marbles = [];
 let obstacles = [];
 let particles = [];
 
-let raceStartTime = 0;
-let raceEndTime = 0;
+let speedLines = [];
 
 let globalSlowMotion = 1;
 
-// ======================================================
-// COLOR SYSTEM (future shader upgrade ready)
-// ======================================================
+// =========================
+// UTIL
+// =========================
 
-const MARBLE_COLORS = [
-  "#ff3b3b",
-  "#3b7bff",
-  "#3bff7a",
-  "#ffe93b",
-  "#b23bff",
-  "#ff8c3b",
-  "#ffffff"
-];
+const rand = (a,b)=>Math.random()*(b-a)+a;
 
-// ======================================================
-// UTILITY FUNCTIONS
-// ======================================================
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function rand(min, max) {
-  return Math.random() * (max - min) + min;
-}
-
-function randInt(min, max) {
-  return Math.floor(rand(min, max + 1));
-}
-
-// ======================================================
-// PARTICLE SYSTEM (CORE)
-// ======================================================
+// =========================
+// PARTICLES
+// =========================
 
 class Particle {
-  constructor(x, y, color, intensity = 1) {
-    this.x = x;
-    this.y = y;
-
-    this.vx = (Math.random() - 0.5) * 3 * intensity;
-    this.vy = (Math.random() - 0.5) * 3 * intensity;
-
-    this.life = randInt(30, 60);
-    this.maxLife = this.life;
-
-    this.color = color;
-    this.size = rand(1.5, 3.5);
+  constructor(x,y,color){
+    this.x=x;
+    this.y=y;
+    this.vx=(Math.random()-0.5)*3;
+    this.vy=(Math.random()-0.5)*3;
+    this.life=50;
+    this.color=color;
   }
 
-  update() {
-    this.x += this.vx * globalSlowMotion;
-    this.y += this.vy * globalSlowMotion;
-
-    this.vx *= 0.96;
-    this.vy *= 0.96;
-
+  update(){
+    this.x+=this.vx;
+    this.y+=this.vy;
     this.life--;
   }
 
-  draw() {
-    ctx.globalAlpha = this.life / this.maxLife;
-    ctx.fillStyle = this.color;
-
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.globalAlpha = 1;
+  draw(){
+    ctx.globalAlpha=this.life/50;
+    ctx.fillStyle=this.color;
+    ctx.fillRect(this.x,this.y,2,2);
+    ctx.globalAlpha=1;
   }
 
-  isDead() {
-    return this.life <= 0;
-  }
+  dead(){ return this.life<=0; }
 }
 
-// ======================================================
-// OBSTACLE SYSTEM (DATA ONLY)
-// ======================================================
+// =========================
+// SPEED LINES (VISUAL ENGINE)
+// =========================
 
-class LaneObstacles {
-  constructor(laneId) {
-    this.laneId = laneId;
-    this.count = randInt(0, GAME_CONFIG.maxObstaclesPerLane);
-    this.positions = [];
-
-    this.generatePositions();
+class SpeedLine {
+  constructor(){
+    this.x=Math.random()*W;
+    this.y=Math.random()*H;
+    this.len=rand(20,80);
+    this.speed=rand(4,10);
   }
 
-  generatePositions() {
-    for (let i = 0; i < this.count; i++) {
-      this.positions.push({
-        x: 300 + i * 120,
-        type: randInt(0, 2),
-        active: true
-      });
+  update(){
+    this.x-=this.speed*globalSlowMotion;
+    if(this.x<0){
+      this.x=W;
+      this.y=Math.random()*H;
     }
   }
 
-  getPenalty() {
-    return this.count * GAME_CONFIG.obstacleSlowFactor;
+  draw(){
+    if(currentState!==GameState.RUNNING) return;
+
+    ctx.globalAlpha=0.3;
+    ctx.strokeStyle="#66aaff";
+
+    ctx.beginPath();
+    ctx.moveTo(this.x,this.y);
+    ctx.lineTo(this.x+this.len,this.y);
+    ctx.stroke();
+
+    ctx.globalAlpha=1;
   }
 }
 
-// ======================================================
-// MARBLE PHYSICS SYSTEM
-// ======================================================
+for(let i=0;i<50;i++) speedLines.push(new SpeedLine());
+
+// =========================
+// OBSTACLES
+// =========================
+
+function makeObstacles(){
+  obstacles=[];
+  for(let i=0;i<LANES;i++){
+    obstacles.push(Math.floor(Math.random()*4));
+  }
+}
+
+// =========================
+// MARBLE ENGINE
+// =========================
 
 class Marble {
-  constructor(id, laneY) {
-    this.id = id;
+  constructor(i){
+    this.i=i;
+    this.x=60;
+    this.y=120+i*60;
 
-    this.x = 60;
-    this.y = laneY;
+    this.vx=0;
+    this.base=2.2+Math.random()*1.5;
 
-    this.vx = 0;
-    this.ax = 0;
+    this.finished=false;
+    this.finishTime=0;
 
-    this.baseSpeed = rand(
-      GAME_CONFIG.baseSpeedMin,
-      GAME_CONFIG.baseSpeedMax
-    );
-
-    this.finished = false;
-    this.finishTime = 0;
-
-    this.trail = [];
-
-    this.glow = 0;
-    this.wobble = rand(0, Math.PI * 2);
-
-    this.lanePenalty = 0;
+    this.glow=0;
+    this.trail=[];
   }
 
-  applyPhysics() {
-    if (currentState !== GameState.RUNNING) return;
-    if (this.finished) return;
+  update(){
+    if(currentState!==GameState.RUNNING) return;
+    if(this.finished) return;
 
-    const penalty = obstacles[this.id].getPenalty();
-    const targetSpeed = this.baseSpeed - penalty;
+    const slow = obstacles[this.i]*0.28;
+    const target = this.base - slow;
 
-    this.ax = (targetSpeed - this.vx) * 0.08;
-    this.vx += this.ax;
+    this.vx += (target-this.vx)*0.08;
+    this.x += this.vx*globalSlowMotion;
 
-    this.vx = clamp(this.vx, 0, 6);
+    this.glow*=0.9;
 
-    this.x += this.vx * globalSlowMotion;
+    this.trail.push({x:this.x,y:this.y});
+    if(this.trail.length>10) this.trail.shift();
 
-    this.wobble += 0.1;
-
-    // trail system
-    this.trail.push({ x: this.x, y: this.y });
-
-    if (this.trail.length > 10) {
-      this.trail.shift();
+    if(Math.random()<0.01 && obstacles[this.i]>0){
+      this.glow=8;
+      particles.push(new Particle(this.x,this.y,COLORS[this.i]));
     }
 
-    // finish condition
-    if (this.x >= GAME_CONFIG.canvasWidth - GAME_CONFIG.finishLinePadding) {
-      this.finishRace();
+    if(this.x>W-90){
+      this.finished=true;
+      this.finishTime=performance.now();
+
+      for(let i=0;i<25;i++){
+        particles.push(new Particle(this.x,this.y,COLORS[this.i]));
+      }
+
+      globalSlowMotion=0.4;
     }
   }
 
-  finishRace() {
-    if (this.finished) return;
+  draw(){
+    this.trail.forEach((t,i)=>{
+      ctx.globalAlpha=i/this.trail.length*0.4;
+      ctx.fillStyle=COLORS[this.i];
+      ctx.fillRect(t.x,t.y,6,6);
+    });
 
-    this.finished = true;
-    this.finishTime = performance.now();
+    ctx.globalAlpha=1;
 
-    this.triggerFinishParticles();
+    let r=14+this.glow;
 
-    globalSlowMotion = 0.35;
-  }
+    ctx.shadowBlur=15;
+    ctx.shadowColor=COLORS[this.i];
 
-  triggerFinishParticles() {
-    for (let i = 0; i < 25; i++) {
-      particles.push(
-        new Particle(this.x, this.y, MARBLE_COLORS[this.id], 1.5)
-      );
-    }
-  }
+    let g=ctx.createRadialGradient(this.x-5,this.y-5,2,this.x,this.y,r);
+    g.addColorStop(0,"#fff");
+    g.addColorStop(0.3,COLORS[this.i]);
+    g.addColorStop(1,"#000");
 
-  drawTrail() {
-    for (let i = 0; i < this.trail.length; i++) {
-      const t = this.trail[i];
-
-      ctx.globalAlpha = i / this.trail.length * 0.4;
-      ctx.fillStyle = MARBLE_COLORS[this.id];
-
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.globalAlpha = 1;
-  }
-
-  drawBody() {
-    const r = GAME_CONFIG.marbleRadius + Math.sin(this.wobble) * 1.5;
-
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = MARBLE_COLORS[this.id];
-
-    const grad = ctx.createRadialGradient(
-      this.x - 5,
-      this.y - 5,
-      2,
-      this.x,
-      this.y,
-      r
-    );
-
-    grad.addColorStop(0, "#ffffff");
-    grad.addColorStop(0.3, MARBLE_COLORS[this.id]);
-    grad.addColorStop(1, "#000000");
-
-    ctx.fillStyle = grad;
-
+    ctx.fillStyle=g;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.arc(this.x,this.y,r,0,Math.PI*2);
     ctx.fill();
 
-    ctx.shadowBlur = 0;
-  }
-
-  draw() {
-    this.drawTrail();
-    this.drawBody();
+    ctx.shadowBlur=0;
   }
 }
 
-// ======================================================
-// RACE ENGINE (CORE CONTROL)
-// ======================================================
+// =========================
+// ENGINE
+// =========================
 
-class RaceEngine {
-  constructor() {
-    this.lanes = [];
-    this.marbles = [];
+function setup(){
+  marbles=[];
+  for(let i=0;i<LANES;i++){
+    marbles.push(new Marble(i));
   }
+}
 
-  init() {
-    this.createLanes();
-    this.createMarbles();
-  }
+// =========================
+// TRACK
+// =========================
 
-  createLanes() {
-    obstacles = [];
+function drawTrack(){
+  let g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#0b1220");
+  g.addColorStop(1,"#05070c");
 
-    for (let i = 0; i < GAME_CONFIG.laneCount; i++) {
-      obstacles.push(new LaneObstacles(i));
-    }
-  }
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,H);
 
-  createMarbles() {
-    marbles = [];
+  for(let i=0;i<LANES;i++){
+    let y=120+i*60;
 
-    for (let i = 0; i < GAME_CONFIG.laneCount; i++) {
-      const y = 120 + i * 60;
-      marbles.push(new Marble(i, y));
-    }
-  }
+    ctx.strokeStyle="rgba(255,255,255,0.08)";
+    ctx.beginPath();
+    ctx.moveTo(0,y);
+    ctx.lineTo(W,y);
+    ctx.stroke();
 
-  update() {
-    if (currentState !== GameState.RUNNING) return;
-
-    marbles.forEach(m => m.applyPhysics());
-
-    particles.forEach(p => p.update());
-
-    particles = particles.filter(p => !p.isDead());
-
-    this.checkRaceEnd();
-  }
-
-  checkRaceEnd() {
-    const allFinished = marbles.every(m => m.finished);
-
-    if (allFinished && currentState === GameState.RUNNING) {
-      currentState = GameState.FINISHED;
-      raceEndTime = performance.now();
-
-      globalSlowMotion = 1;
+    for(let j=0;j<obstacles[i];j++){
+      let x=320+j*120;
+      ctx.fillStyle="#444";
+      ctx.fillRect(x,y-10,22,22);
     }
   }
 }
 
-// ======================================================
-// GLOBAL ENGINE INSTANCE
-// ======================================================
+// =========================
+// UI
+// =========================
 
-const engine = new RaceEngine();
+const status=document.getElementById("status");
+const buttons=document.getElementById("buttons");
 
-engine.init();
+function initUI(){
+  buttons.innerHTML="";
 
-// ======================================================
-// STATE CONTROL FUNCTIONS
-// ======================================================
-
-function startRace() {
-  if (selectedMarble === null) return;
-
-  engine.init();
-
-  currentState = GameState.RUNNING;
-  raceStartTime = performance.now();
-
-  globalSlowMotion = 1;
+  COLORS.forEach((c,i)=>{
+    let b=document.createElement("button");
+    b.style.background=c;
+    b.style.width="30px";
+    b.style.height="30px";
+    b.onclick=()=>selectedMarble=i;
+    buttons.appendChild(b);
+  });
 }
 
-function pickMarble(id) {
-  selectedMarble = id;
-}
+// =========================
+// FLOW
+// =========================
 
-// ======================================================
-// DEBUG EXPORT (for later sections)
-// ======================================================
-
-window._ENGINE = {
-  engine,
-  GameState,
-  startRace,
-  pickMarble,
-  marbles,
-  obstacles,
-  particles
-};
-
-</script>
-<!-- =========================
-PART 2: UI + GAME FLOW SYSTEM
-HOOKS INTO ENGINE (PART 1)
-========================= -->
-
-<script>
-
-// ======================================================
-// UI STATE SYSTEM
-// ======================================================
-
-const UIState = {
-  MENU: "menu",
-  COUNTDOWN: "countdown",
-  RACING: "racing",
-  RESULTS: "results"
-};
-
-let currentUI = UIState.MENU;
-
-// ======================================================
-// UI ELEMENTS (dynamic overlay system)
-// ======================================================
-
-const UI = {
-  statusText: null,
-  buttonsContainer: null,
-  countdown: 0,
-  countdownActive: false,
-  winnerFlash: 0
-};
-
-// ======================================================
-// INITIALIZE UI
-// ======================================================
-
-function initUI() {
-  UI.statusText = document.getElementById("status");
-  UI.buttonsContainer = document.getElementById("buttons");
-
-  createMarbleButtons();
-  setUIState(UIState.MENU);
-}
-
-// ======================================================
-// CREATE MARBLE SELECTION BUTTONS
-// ======================================================
-
-function createMarbleButtons() {
-  UI.buttonsContainer.innerHTML = "";
-
-  for (let i = 0; i < MARBLE_COLORS.length; i++) {
-    const btn = document.createElement("button");
-
-    btn.style.background = MARBLE_COLORS[i];
-    btn.style.width = "35px";
-    btn.style.height = "35px";
-    btn.style.borderRadius = "6px";
-
-    btn.onclick = () => selectMarble(i);
-
-    btn.addEventListener("mouseenter", () => {
-      btn.style.transform = "scale(1.2)";
-    });
-
-    btn.addEventListener("mouseleave", () => {
-      btn.style.transform = "scale(1)";
-    });
-
-    UI.buttonsContainer.appendChild(btn);
-  }
-}
-
-// ======================================================
-// MARBLE SELECTION SYSTEM
-// ======================================================
-
-function selectMarble(id) {
-  pickMarble(id);
-
-  UI.statusText.innerText =
-    "Selected: Marble " + (id + 1);
-
-  flashSelection(id);
-}
-
-function flashSelection(id) {
-  UI.winnerFlash = 10;
-}
-
-// ======================================================
-// RACE START FLOW (WITH COUNTDOWN)
-// ======================================================
-
-function startRaceFlow() {
-  if (selectedMarble === null) {
-    UI.statusText.innerText = "Pick a marble first!";
+function startRaceFlow(){
+  if(selectedMarble===null){
+    status.innerText="Pick marble first";
     return;
   }
 
-  setUIState(UIState.COUNTDOWN);
+  makeObstacles();
+  setup();
 
-  UI.countdown = 3;
-  UI.countdownActive = true;
-
-  runCountdown();
+  currentState=GameState.RUNNING;
+  status.innerText="RACING...";
 }
 
-function runCountdown() {
-  if (UI.countdown <= 0) {
-    startActualRace();
-    return;
+// =========================
+// LOOP (MASTER ENGINE)
+// =========================
+
+function loop(){
+
+  ctx.clearRect(0,0,W,H);
+
+  drawTrack();
+
+  speedLines.forEach(s=>{
+    s.update();
+    s.draw();
+  });
+
+  marbles.forEach(m=>{
+    m.update();
+    m.draw();
+  });
+
+  particles.forEach((p,i)=>{
+    p.update();
+    p.draw();
+    if(p.dead()) particles.splice(i,1);
+  });
+
+  if(currentState===GameState.RUNNING && marbles.every(m=>m.finished)){
+    currentState=GameState.FINISHED;
+
+    let w=[...marbles].sort((a,b)=>a.finishTime-b.finishTime)[0];
+
+    status.innerText=
+      "WINNER: "+COLORS[w.i].toUpperCase()+
+      " | YOU PICKED: "+COLORS[selectedMarble].toUpperCase();
   }
 
-  UI.statusText.innerText = "Starting in " + UI.countdown;
-
-  setTimeout(() => {
-    UI.countdown--;
-    runCountdown();
-  }, 800);
+  requestAnimationFrame(loop);
 }
 
-function startActualRace() {
-  startRace(); // from ENGINE (PART 1)
+// =========================
+// START
+// =========================
 
-  setUIState(UIState.RACING);
-
-  UI.statusText.innerText = "RACE STARTED!";
-}
-
-// ======================================================
-// UI STATE MANAGEMENT
-// ======================================================
-
-function setUIState(state) {
-  currentUI = state;
-}
-
-// ======================================================
-// RENDER UI OVERLAY ON CANVAS
-// ======================================================
-
-function drawUIOverlay() {
-  if (currentUI === UIState.COUNTDOWN) {
-    drawCountdown();
-  }
-
-  if (currentUI === UIState.RESULTS) {
-    drawResultsScreen();
-  }
-
-  if (UI.winnerFlash > 0) {
-    UI.winnerFlash--;
-  }
-}
-
-// ======================================================
-// COUNTDOWN VISUAL
-// ======================================================
-
-function drawCountdown() {
-  ctx.save();
-
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillRect(0,0,W,H);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 80px Arial";
-  ctx.textAlign = "center";
-
-  ctx.fillText(UI.countdown, W/2, H/2);
-
-  ctx.restore();
-}
-
-// ======================================================
-// RESULTS SCREEN
-// ======================================================
-
-function drawResultsScreen() {
-  const winner = getWinner();
-
-  ctx.save();
-
-  ctx.fillStyle = "rgba(0,0,0,0.65)";
-  ctx.fillRect(0,0,W,H);
-
-  ctx.fillStyle = MARBLE_COLORS[winner.id];
-  ctx.font = "bold 50px Arial";
-  ctx.textAlign = "center";
-
-  ctx.fillText("WINNER!", W/2, H/2 - 40);
-
-  ctx.fillStyle = "#fff";
-  ctx.font = "30px Arial";
-
-  ctx.fillText(
-    "Marble " + (winner.id + 1),
-    W/2,
-    H/2 + 20
-  );
-
-  if (selectedMarble === winner.id) {
-    ctx.fillStyle = "#00ff88";
-    ctx.fillText("YOU WON!", W/2, H/2 + 80);
-  } else {
-    ctx.fillStyle = "#ff4444";
-    ctx.fillText("YOU LOST", W/2, H/2 + 80);
-  }
-
-  ctx.restore();
-}
-
-// ======================================================
-// WINNER CALCULATION
-// ======================================================
-
-function getWinner() {
-  return [...marbles].sort(
-    (a,b) => a.finishTime - b.finishTime
-  )[0];
-}
-
-// ======================================================
-// MAIN GAME LOOP EXTENSION
-// ======================================================
-
-function gameLoopExtension() {
-  drawUIOverlay();
-
-  if (currentUI === UIState.FINISHED) {
-    setUIState(UIState.RESULTS);
-  }
-
-  requestAnimationFrame(gameLoopExtension);
-}
-
-// ======================================================
-// CONNECT TO ENGINE UPDATE LOOP
-// ======================================================
-
-function updateGame() {
-  engine.update();
-
-  if (engine.marbles.every(m => m.finished)) {
-    setUIState(UIState.FINISHED);
-  }
-
-  requestAnimationFrame(updateGame);
-}
-
-// ======================================================
-// INPUT HOOKS
-// ======================================================
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === " ") {
-    startRaceFlow();
-  }
-});
-
-// ======================================================
-// BOOT SYSTEM
-// ======================================================
-
-window.addEventListener("load", () => {
-  initUI();
-
-  updateGame();
-  gameLoopExtension();
-});
-
-// ======================================================
-// GLOBAL EXPORT (for debugging)
-// ======================================================
-
-window._UI = {
-  UI,
-  setUIState,
-  startRaceFlow,
-  selectMarble
-};
+initUI();
+setup();
+makeObstacles();
+loop();
 
 </script>
+
+</body>
+</html>
