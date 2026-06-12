@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Marble Race FIXED</title>
+<title>Marble Race ULTIMATE</title>
 
 <style>
 body {
@@ -42,21 +42,14 @@ button {
 
 <div id="ui">
   <h2>MARBLE RACE</h2>
-
   <div id="buttons"></div>
-
   <button onclick="startGame()">START</button>
-
   <h3 id="status">Pick a marble</h3>
 </div>
 
 <canvas id="c" width="1000" height="600"></canvas>
 
 <script>
-
-// =========================
-// CANVAS
-// =========================
 
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
@@ -68,10 +61,6 @@ const LANES = 7;
 
 const COLORS = ["#ff3b3b","#3b7bff","#3bff7a","#ffe93b","#b23bff","#ff8c3b","#ffffff"];
 const NAMES = ["Red","Blue","Green","Yellow","Purple","Orange","White"];
-
-// =========================
-// STATE
-// =========================
 
 let selected = null;
 let marbles = [];
@@ -131,14 +120,20 @@ class Marble {
 
     this.speed=2.8;
     this.slow=0;
+
     this.trail=[];
     this.finished=false;
+
+    this.spin=0;
+    this.prevX=this.x;
   }
 
   update(){
 
     if(state!=="running") return;
     if(this.finished || winnerLocked) return;
+
+    this.prevX=this.x;
 
     let sp=this.speed;
 
@@ -149,10 +144,13 @@ class Marble {
 
     this.x+=sp;
 
-    this.trail.push({x:this.x,y:this.y});
-    if(this.trail.length>10) this.trail.shift();
+    // REALISTIC ROLLING
+    this.spin += (this.x - this.prevX) * 0.12;
 
-    // obstacles
+    this.trail.push({x:this.x,y:this.y});
+    if(this.trail.length>12) this.trail.shift();
+
+    // OBSTACLES
     for(let j=0;j<obstacles[this.i];j++){
       let ox=300+j*200;
 
@@ -162,7 +160,7 @@ class Marble {
       }
     }
 
-    // WIN
+    // FINISH
     if(!winnerLocked && this.x>W-90){
 
       winnerLocked=true;
@@ -175,19 +173,99 @@ class Marble {
 
   draw(){
 
+    // trail glow
     for(let i=0;i<this.trail.length;i++){
       let t=this.trail[i];
-      ctx.globalAlpha=i/this.trail.length*0.4;
+      ctx.globalAlpha=i/this.trail.length*0.3;
       ctx.fillStyle=COLORS[this.i];
       ctx.fillRect(t.x,t.y,5,5);
     }
 
     ctx.globalAlpha=1;
 
-    ctx.fillStyle=COLORS[this.i];
+    ctx.save();
+    ctx.translate(this.x,this.y);
+    ctx.rotate(this.spin);
+
+    // glow
+    ctx.shadowBlur=18;
+    ctx.shadowColor=COLORS[this.i];
+
+    let r=14;
+
+    let g=ctx.createRadialGradient(-5,-5,2,0,0,r);
+    g.addColorStop(0,"#fff");
+    g.addColorStop(0.3,COLORS[this.i]);
+    g.addColorStop(1,"#000");
+
+    ctx.fillStyle=g;
+
     ctx.beginPath();
-    ctx.arc(this.x,this.y,14,0,Math.PI*2);
+    ctx.arc(0,0,r,0,Math.PI*2);
     ctx.fill();
+
+    // reflection
+    ctx.strokeStyle="rgba(255,255,255,0.35)";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc(-3,-3,r*0.6,0,Math.PI);
+    ctx.stroke();
+
+    ctx.restore();
+
+    ctx.shadowBlur=0;
+  }
+}
+
+// =========================
+// TRACK (REALISTIC)
+// =========================
+
+function drawTrack(){
+
+  let g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#0a0f18");
+  g.addColorStop(1,"#04060a");
+
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,H);
+
+  for(let i=0;i<LANES;i++){
+
+    let y=120+i*60;
+
+    // lane glow
+    ctx.strokeStyle="rgba(120,180,255,0.12)";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(0,y);
+    ctx.lineTo(W,y);
+    ctx.stroke();
+
+    // texture
+    for(let x=0;x<W;x+=35){
+      ctx.fillStyle="rgba(255,255,255,0.02)";
+      ctx.fillRect(x,y-1,2,2);
+    }
+
+    // obstacles (3D metal)
+    for(let j=0;j<obstacles[i];j++){
+      let ox=300+j*200;
+
+      ctx.fillStyle="rgba(0,0,0,0.4)";
+      ctx.fillRect(ox+2,y-8,26,26);
+
+      let g2=ctx.createLinearGradient(ox,y,ox+20,y+20);
+      g2.addColorStop(0,"#777");
+      g2.addColorStop(0.5,"#bbb");
+      g2.addColorStop(1,"#444");
+
+      ctx.fillStyle=g2;
+      ctx.fillRect(ox,y-10,24,24);
+
+      ctx.strokeStyle="rgba(255,255,255,0.2)";
+      ctx.strokeRect(ox,y-10,24,24);
+    }
   }
 }
 
@@ -218,15 +296,13 @@ function initUI(){
     b.style.background=c;
     b.style.width="30px";
     b.style.height="30px";
-
     b.onclick=()=>selected=i;
-
     buttons.appendChild(b);
   });
 }
 
 // =========================
-// START GAME
+// START
 // =========================
 
 function startGame(){
@@ -250,6 +326,8 @@ function startGame(){
 function loop(){
 
   ctx.clearRect(0,0,W,H);
+
+  drawTrack();
 
   marbles.forEach(m=>m.update());
   marbles.forEach(m=>m.draw());
