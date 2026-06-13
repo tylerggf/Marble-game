@@ -43,8 +43,7 @@ button {
 <div id="ui">
   <h2>MARBLE RACE</h2>
   <div id="buttons"></div>
-  <button onclick="startGame()">START</button>
-  <h3 id="status">Pick a marble</h3>
+  <h3 id="status">Pick a marble to start</h3>
 </div>
 
 <canvas id="c" width="1000" height="600"></canvas>
@@ -68,6 +67,7 @@ let obstacles = [];
 let particles = [];
 let state = "waiting";
 let winnerLocked = false;
+let restartTimeout = null;
 
 // =========================
 // OBSTACLES
@@ -76,7 +76,13 @@ let winnerLocked = false;
 function makeObstacles(){
   obstacles=[];
   for(let i=0;i<LANES;i++){
-    obstacles.push(Math.floor(Math.random()*3)+1);
+    let laneObs = [];
+    let count = Math.floor(Math.random()*3)+1;
+    for(let j=0;j<count;j++){
+      // Generate random unique positions for each lane's obstacles
+      laneObs.push(250 + j*220 + Math.random()*120);
+    }
+    obstacles.push(laneObs);
   }
 }
 
@@ -118,7 +124,8 @@ class Marble {
     this.x=60;
     this.y=120+i*60;
 
-    this.speed=2.8;
+    // Slight speed variation ensures marbles don't stay perfectly synced
+    this.speed=2.6 + Math.random() * 0.5;
     this.slow=0;
 
     this.trail=[];
@@ -151,14 +158,14 @@ class Marble {
     if(this.trail.length>12) this.trail.shift();
 
     // OBSTACLES
-    for(let j=0;j<obstacles[this.i];j++){
-      let ox=300+j*200;
-
+    const laneObs = obstacles[this.i] || [];
+    laneObs.forEach(ox => {
       if(Math.abs(this.x-ox)<10 && this.slow===0){
-        this.slow=90;
+        // Randomize recovery time slightly
+        this.slow=80 + Math.floor(Math.random()*30);
         particles.push(new Particle(this.x,this.y,COLORS[this.i]));
       }
-    }
+    });
 
     // FINISH
     if(!winnerLocked && this.x>W-90){
@@ -167,7 +174,18 @@ class Marble {
       this.finished=true;
       state="finished";
 
-      status.innerText="WINNER: "+NAMES[this.i];
+      if (this.i === selected) {
+        status.innerText = "YOU WIN! " + NAMES[this.i] + " finished first!";
+        status.style.color = "#3bff7a"; // Green for win
+      } else {
+        status.innerText = "YOU LOSE! " + NAMES[this.i] + " finished first!";
+        status.style.color = "#ff3b3b"; // Red for loss
+      }
+
+      // Reset after 3 seconds to let player pick again
+      restartTimeout = setTimeout(() => {
+        resetGame();
+      }, 3000);
     }
   }
 
@@ -186,6 +204,15 @@ class Marble {
     ctx.save();
     ctx.translate(this.x,this.y);
     ctx.rotate(this.spin);
+
+    // Draw a highlight ring if this is the player's selected marble
+    if (this.i === selected) {
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+      ctx.lineWidth = 3;
+      ctx.arc(0, 0, 18, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // glow
     ctx.shadowBlur=18;
@@ -235,23 +262,28 @@ function drawTrack(){
     let y=120+i*60;
 
     // lane glow
-    ctx.strokeStyle="rgba(120,180,255,0.12)";
+    ctx.save();
+    ctx.strokeStyle=COLORS[i];
+    ctx.globalAlpha=0.15;
     ctx.lineWidth=2;
     ctx.beginPath();
     ctx.moveTo(0,y);
     ctx.lineTo(W,y);
     ctx.stroke();
+    ctx.restore();
 
     // texture
+    ctx.save();
+    ctx.fillStyle=COLORS[i];
+    ctx.globalAlpha=0.04;
     for(let x=0;x<W;x+=35){
-      ctx.fillStyle="rgba(255,255,255,0.02)";
       ctx.fillRect(x,y-1,2,2);
     }
+    ctx.restore();
 
     // obstacles (3D metal)
-    for(let j=0;j<obstacles[i];j++){
-      let ox=300+j*200;
-
+    const laneObs = obstacles[i] || [];
+    laneObs.forEach(ox => {
       ctx.fillStyle="rgba(0,0,0,0.4)";
       ctx.fillRect(ox+2,y-8,26,26);
 
@@ -265,7 +297,7 @@ function drawTrack(){
 
       ctx.strokeStyle="rgba(255,255,255,0.2)";
       ctx.strokeRect(ox,y-10,24,24);
-    }
+    });
   }
 }
 
@@ -279,6 +311,21 @@ function setup(){
     marbles.push(new Marble(i));
   }
   winnerLocked=false;
+}
+
+function resetGame() {
+  state = "waiting";
+  selected = null;
+  status.innerText = "Pick a marble to start";
+  status.style.color = "white";
+
+  // Re-enable and reset buttons
+  Array.from(buttons.children).forEach(btn => {
+    btn.style.opacity = "1";
+    btn.style.borderColor = "transparent";
+    btn.style.transform = "scale(1)";
+  });
+  setup();
 }
 
 // =========================
@@ -296,7 +343,29 @@ function initUI(){
     b.style.background=c;
     b.style.width="30px";
     b.style.height="30px";
-    b.onclick=()=>selected=i;
+    b.style.border="2px solid transparent";
+    b.style.transition="all 0.2s";
+    b.onclick=()=>{
+      // If a race is running, don't allow switching
+      if (state === "running") return;
+
+      // If we were waiting for an auto-restart, cancel that timer
+      // because the player is making a manual choice now.
+      if (restartTimeout) clearTimeout(restartTimeout);
+
+      selected=i;
+      // Update status text to show choice
+      status.innerText="You picked: " + NAMES[i];
+      status.style.color=COLORS[i];
+      // Highlight the clicked button and reset others
+      Array.from(buttons.children).forEach((btn, idx) => {
+        btn.style.borderColor = (idx === i) ? "white" : "transparent";
+        btn.style.transform = (idx === i) ? "scale(1.3)" : "scale(1)";
+        btn.style.opacity = "1";
+      });
+
+      startGame();
+    };
     buttons.appendChild(b);
   });
 }
@@ -317,6 +386,10 @@ function startGame(){
 
   state="running";
   status.innerText="RACING...";
+  status.style.color = "white";
+
+  // Visually lock the selection buttons
+  Array.from(buttons.children).forEach(btn => btn.style.opacity = "0.5");
 }
 
 // =========================
@@ -326,10 +399,16 @@ function startGame(){
 function loop(){
 
   ctx.clearRect(0,0,W,H);
-
   drawTrack();
 
-  marbles.forEach(m=>m.update());
+  // Update marbles - stop immediately if a winner is found
+  if (state === "running") {
+    for (let i = 0; i < marbles.length; i++) {
+      marbles[i].update();
+      if (winnerLocked) break; 
+    }
+  }
+
   marbles.forEach(m=>m.draw());
 
   particles.forEach((p,i)=>{
